@@ -24,10 +24,9 @@ const login = async (req, res) => {
             // Generate a JWT token 
             const token = jwt.sign(
                 { id: admin._id, email: admin.email },
-                'your_jwt_secret_key', // Replace with your actual secret key
+                'your_jwt_secret_key', 
                 { expiresIn: '1h' }
             );
-
             res.status(200).json({
                 success: true,
                 message: 'Login successful',
@@ -48,6 +47,7 @@ const postOrder = async (req, res) => {
   try {
     // Extract data from request body
     const { name, phone, place, plan, paymentStatus, startDate, endDate } = req.body;
+    console.log('working here',req.body,name)
 
     const existingUser = await User.findOne({ phone });
     if (existingUser) {
@@ -66,16 +66,26 @@ const postOrder = async (req, res) => {
 
     if (paymentStatus) {
 
-        let orderStatus = 'leave';
 
-        const currentDate = new Date();
-        const orderStartDate = new Date(startDate);
-        const orderEndDate = new Date(endDate);
-        
-        if (orderStartDate.getTime() <= currentDate.getTime() && currentDate.getTime() <= orderEndDate.getTime()) {
+      if (plan !== undefined && startDate !== undefined && endDate !== undefined){
+        return res.status(404).json({ message: 'fill all plan data' });
+      }
+      let orderStatus = 'soon';
+
+      const currentDate = new Date();
+      const orderStartDate = new Date(startDate);
+      const orderEndDate = new Date(endDate);
+      
+      if (!isNaN(orderStartDate) && !isNaN(orderEndDate)) { 
+        if (orderStartDate <= currentDate && currentDate <= orderEndDate) {
           orderStatus = 'active';
         }
-        
+      } else {
+        console.error('Invalid date(s) provided');
+      }
+      
+      console.log(orderStatus); 
+      
 
       const newOrder = new Order({
         userId: newUser._id,

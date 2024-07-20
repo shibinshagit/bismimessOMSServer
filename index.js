@@ -31,7 +31,7 @@ app.use(session({
   secret: sessionSecret,
   resave: false,
   saveUninitialized: true,
-  cookie: { secure: false } // Set secure: true if using HTTPS
+  cookie: { secure: false } 
 }));
  
 // DB Connection
@@ -50,5 +50,5 @@ app.use('*',(req, res) => {
 
 
 // Server
-app.listen(port, () => console.log(`Server is running on http://localhost:${port}`));
+app.listen(port, () => console.log(`Server is running on ${host}:${port}`));
 

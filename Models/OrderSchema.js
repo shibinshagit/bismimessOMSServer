@@ -11,7 +11,7 @@ const orderSchema = new Schema({
       end: { type: Date, required: true },
       numberOfLeaves: { type: Number, required: true, max: 8 }
     }],
-    status: { type: String, enum: ['active', 'leave', 'renew'], required: true }
+    status: { type: String, enum: ['active', 'leave', 'renew','soon'], required: true }
   });
   
   const Order = mongoose.model('Order', orderSchema);
