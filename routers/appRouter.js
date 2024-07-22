@@ -12,6 +12,7 @@ router.post('/login',controllers.login );
 router.post('/postorder',controllers.postOrder );
 router.get('/users',controllers.getUsers );
 router.get('/statistics',controllers.getDailyStatistics );
+router.put('/updateUser/:id',controllers.editUser);
 
 // Export the router
 module.exports = router;      
