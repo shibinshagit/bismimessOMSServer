@@ -364,8 +364,42 @@ console.log('me',latestOrder)
     res.status(500).json({ message: "Error updating user" });
   }
 };
+// deleteUser===========================================================================================================================================
+const deleteUser = async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const user = await User.findById(userId);
 
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
 
+    await User.findByIdAndDelete(userId);
+    return res.status(200).json({ message: 'User deleted permanently' });
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// trashUser==================================================================================================================================================
+const trashUser = async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    user.isDeleted = true;
+    await user.save();
+    return res.status(200).json({ message: 'User moved to trash' });
+  } catch (error) {
+    console.error('Error trashing user:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+};
 
 module.exports = {
   login,
@@ -373,4 +407,6 @@ module.exports = {
   getUsers,
   getDailyStatistics,
   editUser,
+  deleteUser,
+  trashUser,
 };
