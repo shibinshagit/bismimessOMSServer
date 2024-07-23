@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 const Admin = require("../Models/adminSchema");
 const User = require("../Models/UserSchema");
 const Order = require("../Models/OrderSchema");
@@ -96,12 +96,10 @@ const postOrder = async (req, res) => {
       await newUser.save();
     }
     await newUser.save();
-    res
-      .status(200)
-      .json({
-        message: "User and order added successfully",
-        userId: newUser._id,
-      });
+    res.status(200).json({
+      message: "User and order added successfully",
+      userId: newUser._id,
+    });
   } catch (error) {
     console.error("Error adding user and order:", error);
     res.status(500).json({ message: "Error adding user and order" });
@@ -128,19 +126,19 @@ const getUsers = async (req, res) => {
     const users = await User.aggregate([
       {
         $lookup: {
-          from: 'orders',
-          localField: 'orders',
-          foreignField: '_id',
-          as: 'orders',
+          from: "orders",
+          localField: "orders",
+          foreignField: "_id",
+          as: "orders",
         },
       },
       {
         $addFields: {
           orders: {
             $filter: {
-              input: '$orders',
-              as: 'order',
-              cond: { $gte: ['$$order.orderEnd', today] },
+              input: "$orders",
+              as: "order",
+              cond: { $gte: ["$$order.orderEnd", today] },
             },
           },
         },
@@ -148,7 +146,7 @@ const getUsers = async (req, res) => {
       {
         $addFields: {
           latestOrder: {
-            $arrayElemAt: ['$orders', -1],
+            $arrayElemAt: ["$orders", -1],
           },
         },
       },
@@ -166,8 +164,8 @@ const getUsers = async (req, res) => {
 
     res.status(200).json(users);
   } catch (error) {
-    console.error('Error fetching users:', error);
-    res.status(500).json({ message: 'Failed to fetch users' });
+    console.error("Error fetching users:", error);
+    res.status(500).json({ message: "Failed to fetch users" });
   }
 };
 
@@ -219,43 +217,160 @@ const getDailyStatistics = async (req, res) => {
 };
 
 // editUser======================================================================================================================
+// const editUser = async (req, res) => {
+//   try {
+//     const userId = req.params.id;
+//     const { name, phone, place, plan, paymentStatus, startDate, endDate } = req.body;
+//     const updatedUserData = req.body;
+
+//     if (!mongoose.Types.ObjectId.isValid(userId)) {
+//       return res.status(400).json({ message: "Invalid user ID" });
+//     }
+
+//     const user = User.findById({userId});
+//     console.log(user)
+//     const userExistingPhone = user.phone;
+//     if (!userExistingPhone === phone) {
+//       const existingUser = await User.findOne({ phone });
+//       if (existingUser) {
+//         return res.status(400).json({ message: "Phone number already exists" });
+//       }
+//     }
+
+//     if (paymentStatus) {
+//       if (plan.length === 0) {
+//         return res.status(204).json({ message: "Fill all plan data" });
+//       }
+
+//       let orderStatus = "soon";
+
+//       const currentDate = new Date();
+//       const orderStartDate = new Date(startDate);
+//       const orderEndDate = new Date(endDate);
+
+//       if (!isNaN(orderStartDate) && !isNaN(orderEndDate)) {
+//         if (orderStartDate <= currentDate && currentDate <= orderEndDate) {
+//           orderStatus = "active";
+//         }
+//       } else {
+//         console.error("Invalid date(s) provided");
+//       }
+
+//       console.log(orderStatus);
+
+//       const newOrder = new Order({
+//         userId: newUser._id,
+//         plan,
+//         orderStart: startDate,
+//         orderEnd: endDate,
+//         leave: [],
+//         status: orderStatus,
+//       });
+
+//       await newOrder.save();
+//       newUser.orders.push(newOrder._id);
+//       await newUser.save();
+//     }
+//     const updatedUser = await User.findByIdAndUpdate(
+//       userId,
+//       { $set: updatedUserData },
+//       { new: true, runValidators: true }
+//     );
+
+//     if (!updatedUser) {
+//       return res.status(404).json({ message: "User not found" });
+//     }
+
+//     res.status(200).json(updatedUser);
+//   } catch (error) {
+//     console.error("Error updating user:", error);
+//     res.status(500).json({ message: "Server error" });
+//   }
+// };
+
+// edit user ======================================================================
+
 const editUser = async (req, res) => {
   try {
-    // Get the user ID from the URL parameters
-    const userId = req.params.id;
-    // Validate user ID
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ message: 'Invalid user ID' });
+    const { id } = req.params;
+    const { name, phone, place, plan, paymentStatus, startDate, endDate } = req.body;
+
+    // Find the user by ID
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
     }
 
-    // Get the updated user data from the request body
-    const updatedUserData = req.body;
-
-    // Find the user by ID and update
-    const updatedUser = await User.findByIdAndUpdate(
-      userId,
-      { $set: updatedUserData },
-      { new: true, runValidators: true }
-    );
-
-    // If user is not found
-    if (!updatedUser) {
-      return res.status(404).json({ message: 'User not found' });
+    // Check if the phone number is changed and if it already exists
+    if (user.phone !== phone) {
+      const existingUser = await User.findOne({ phone });
+      if (existingUser) {
+        return res.status(400).json({ message: "Phone number already exists" });
+      }
+      user.phone = phone;
     }
 
-    // Return the updated user
-    res.status(200).json(updatedUser);
+    // Update user details
+    user.name = name;
+    user.place = place;
+    user.paymentStatus = paymentStatus;
+
+    // Handle orders if payment status is updated
+    if (paymentStatus) {
+      if (!plan || plan.length === 0) {
+        return res.status(204).json({ message: "Plan details are required" });
+      }
+
+      let orderStatus = "soon";
+      const currentDate = new Date();
+      const orderStartDate = new Date(startDate);
+      const orderEndDate = new Date(endDate);
+
+      if (!isNaN(orderStartDate) && !isNaN(orderEndDate)) {
+        if (orderStartDate <= currentDate && currentDate <= orderEndDate) {
+          orderStatus = "active";
+        }
+      } else {
+        return res.status(400).json({ message: "Invalid date(s) provided" });
+      }
+
+      const latestOrder = await Order.findOne({ userId: user._id }).sort({ orderStart: -1 });
+console.log('me',latestOrder)
+      if (latestOrder) {
+        latestOrder.plan = plan;
+        latestOrder.orderStart = startDate;
+        latestOrder.orderEnd = endDate;
+        latestOrder.status = orderStatus;
+        await latestOrder.save();
+      } else {
+        const newOrder = new Order({
+          userId: user._id,
+          plan,
+          orderStart: startDate,
+          orderEnd: endDate,
+          leave: [],
+          status: orderStatus,
+        });
+
+        await newOrder.save();
+        user.orders.push(newOrder._id);
+      }
+    }
+
+    await user.save();
+    res.status(200).json({ message: "User updated successfully" });
   } catch (error) {
-    // Log the error and send a response
-    console.error('Error updating user:', error);
-    res.status(500).json({ message: 'Server error' });
+    console.error("Error updating user:", error);
+    res.status(500).json({ message: "Error updating user" });
   }
 };
+
+
 
 module.exports = {
   login,
   postOrder,
   getUsers,
   getDailyStatistics,
-  editUser
+  editUser,
 };
