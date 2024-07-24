@@ -15,6 +15,7 @@ router.get('/statistics',controllers.getDailyStatistics );
 router.put('/updateUser/:id',controllers.editUser);
 router.delete('/deleteUser/:id', controllers.deleteUser);
 router.put('/trashUser/:id', controllers.trashUser);
+router.post('/addLeave/:orderId', controllers.addLeave);
 
 // Export the router
 module.exports = router;      

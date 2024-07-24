@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const Admin = require("../Models/adminSchema");
 const User = require("../Models/UserSchema");
 const Order = require("../Models/OrderSchema");
+const cron = require('node-cron');
 
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
@@ -294,6 +295,7 @@ const editUser = async (req, res) => {
   try {
     const { id } = req.params;
     const { name, phone, place, plan, paymentStatus, startDate, endDate } = req.body;
+    console.log('hello',req.body.latestOrder_id)
 
     // Find the user by ID
     const user = await User.findById(id);
@@ -368,19 +370,27 @@ console.log('me',latestOrder)
 const deleteUser = async (req, res) => {
   try {
     const userId = req.params.id;
+
+    // Find the user by ID
     const user = await User.findById(userId);
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
+    // Delete all orders associated with the user
+    await Order.deleteMany({ userId });
+
+    // Delete the user
     await User.findByIdAndDelete(userId);
-    return res.status(200).json({ message: 'User deleted permanently' });
+
+    return res.status(200).json({ message: 'User and their orders deleted permanently' });
   } catch (error) {
-    console.error('Error deleting user:', error);
+    console.error('Error deleting user and their orders:', error);
     return res.status(500).json({ message: 'Server error' });
   }
 };
+
 
 // trashUser==================================================================================================================================================
 const trashUser = async (req, res) => {
@@ -401,6 +411,109 @@ const trashUser = async (req, res) => {
   }
 };
 
+// addLeave========================================================================================================================================
+
+const addLeave = async (req, res) => {
+  const { orderId } = req.params;
+  const { leaveStart, leaveEnd } = req.body;
+console.log('shahahh',req.body)
+  try {
+    const order = await Order.findById(orderId);
+
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    const leaveStartDate = new Date(leaveStart);
+    const leaveEndDate = new Date(leaveEnd);
+
+    // Check if the leave end date is within the order end date
+    const orderEndDate = new Date(order.orderEnd);
+    if (leaveEndDate > orderEndDate) {
+      return res.status(400).json({ message: 'Leave end date exceeds order end date' });
+    }
+
+    // Check for overlapping active leave
+    const activeLeave = order.leave.find(leave => new Date(leave.end) > new Date());
+    if (activeLeave) {
+      return res.status(400).json({ message: 'User already has an active leave' });
+    }
+
+    // Calculate the number of leave days
+    const numberOfLeaves = Math.ceil((leaveEndDate - leaveStartDate) / (1000 * 60 * 60 * 24));
+
+    // Add the leave to the order's leave array
+    order.leave.push({
+      start: leaveStartDate,
+      end: leaveEndDate,
+      numberOfLeaves,
+    });
+
+    await order.save();
+
+    return res.status(200).json({ message: 'Leave added successfully' });
+  } catch (error) {
+    console.error('Error adding leave:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+
+// ====================== Node cron=========================================================================================================================
+
+async function updateOrderStatuses() {
+  try {
+    const orders = await Order.find({}); // Fetch all orders
+
+    orders.forEach(order => {
+      const currentDate = new Date();
+      const orderStart = new Date(order.orderStart);
+      const orderEnd = new Date(order.orderEnd);
+
+      // Example logic to update statuses
+      if (currentDate < orderStart) {
+        order.status = 'soon';
+      } else if (currentDate >= orderStart && currentDate <= orderEnd) {
+        order.status = 'active';
+      } else if (currentDate > orderEnd) {
+        order.status = 'expired';
+      }
+console.log('ok',order.status)
+      // Save the updated order
+
+      order.save();
+    });
+
+    console.log('Order statuses updated successfully');
+  } catch (error) {
+    console.error('Error updating order statuses:', error);
+  }
+}
+
+const cleanupJunkOrders = async () => {
+  try {
+    // Fetch all user IDs
+    console.log('opopoo')
+    const users = await User.find({}, '_id');
+    const userIds = users.map(user => user._id.toString());
+
+    // Find and delete orders with no corresponding user
+    const result = await Order.deleteMany({
+      userId: { $nin: userIds }
+    });
+
+    console.log(`Deleted ${result.deletedCount} junk orders.`);
+  } catch (err) {
+    console.error('Error cleaning up junk orders:', err);
+  } 
+};
+
+// Schedule the function to run daily at midnight
+// cron.schedule('* * * * * *',cleanupJunkOrders );
+
+// Schedule the function to run daily at midnight
+cron.schedule('0 0 * * *', updateOrderStatuses);
+
 module.exports = {
   login,
   postOrder,
@@ -409,4 +522,5 @@ module.exports = {
   editUser,
   deleteUser,
   trashUser,
+  addLeave
 };
