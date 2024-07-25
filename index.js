@@ -38,7 +38,7 @@ app.use(session({
 connectDB();
 
 const port = process.env.PORT || 5000;
-const host = process.env.HOST || 'localhost';
+const host = process.env.HOST || 'localhost';  
 
 
 // Routes

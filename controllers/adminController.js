@@ -416,7 +416,7 @@ const trashUser = async (req, res) => {
 const addLeave = async (req, res) => {
   const { orderId } = req.params;
   const { leaveStart, leaveEnd } = req.body;
-console.log('shahahh',req.body)
+  
   try {
     const order = await Order.findById(orderId);
 
@@ -440,7 +440,11 @@ console.log('shahahh',req.body)
     }
 
     // Calculate the number of leave days
-    const numberOfLeaves = Math.ceil((leaveEndDate - leaveStartDate) / (1000 * 60 * 60 * 24));
+    const differenceInTime = leaveEndDate - leaveStartDate;
+    const differenceInDays = Math.ceil(differenceInTime / (1000 * 60 * 60 * 24));
+    
+    // Add 1 to include the start date in the leave period
+    const numberOfLeaves = differenceInDays + 1;
 
     // Add the leave to the order's leave array
     order.leave.push({
@@ -448,6 +452,12 @@ console.log('shahahh',req.body)
       end: leaveEndDate,
       numberOfLeaves,
     });
+
+    // Check if the present day falls within the leave period
+    const today = new Date();
+    if (today >= leaveStartDate && today <= leaveEndDate) {
+      order.status = 'leave';
+    }
 
     await order.save();
 
@@ -457,6 +467,7 @@ console.log('shahahh',req.body)
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
+
 
 
 // ====================== Node cron=========================================================================================================================

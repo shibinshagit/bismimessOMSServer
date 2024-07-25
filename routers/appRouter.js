@@ -12,7 +12,7 @@ router.post('/login',controllers.login );
 router.post('/postorder',controllers.postOrder );
 router.get('/users',controllers.getUsers );
 router.get('/statistics',controllers.getDailyStatistics );
-router.put('/updateUser/:id',controllers.editUser);
+router.put('/updateUser/:id',controllers.editUser);  
 router.delete('/deleteUser/:id', controllers.deleteUser);
 router.put('/trashUser/:id', controllers.trashUser);
 router.post('/addLeave/:orderId', controllers.addLeave);
