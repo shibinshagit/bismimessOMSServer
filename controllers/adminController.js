@@ -6,6 +6,7 @@ const cron = require('node-cron');
 
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const stripTime = (date) => new Date(date.setHours(0, 0, 0, 0));
 
 // login=======================================================================================================================
 const login = async (req, res) => {
@@ -43,13 +44,10 @@ const login = async (req, res) => {
   }
 };
 
-// postOrder======================================================================================================================
-
 const postOrder = async (req, res) => {
   try {
     // Extract data from request body
-    const { name, phone, place, plan, paymentStatus, startDate, endDate } =
-      req.body;
+    const { name, phone, place, plan, paymentStatus, startDate, endDate } = req.body;
     const existingUser = await User.findOne({ phone });
     if (existingUser) {
       return res.status(400).json({ message: "Phone number already exists" });
@@ -69,9 +67,10 @@ const postOrder = async (req, res) => {
 
       let orderStatus = "soon";
 
-      const currentDate = new Date();
-      const orderStartDate = new Date(startDate);
-      const orderEndDate = new Date(endDate);
+
+      const currentDate = stripTime(new Date());
+      const orderStartDate = stripTime(new Date(startDate));
+      const orderEndDate = stripTime(new Date(endDate));
 
       if (!isNaN(orderStartDate) && !isNaN(orderEndDate)) {
         if (orderStartDate <= currentDate && currentDate <= orderEndDate) {
@@ -79,6 +78,7 @@ const postOrder = async (req, res) => {
         }
       } else {
         console.error("Invalid date(s) provided");
+        return res.status(400).json({ message: "Invalid date(s) provided" });
       }
 
       console.log(orderStatus);
@@ -94,9 +94,13 @@ const postOrder = async (req, res) => {
 
       await newOrder.save();
       newUser.orders.push(newOrder._id);
-      await newUser.save();
     }
+
     await newUser.save();
+
+    // Emit socket event with new user data
+    // req.io.sockets.emit('dataUpdated', { user: newUser });
+
     res.status(200).json({
       message: "User and order added successfully",
       userId: newUser._id,
@@ -106,6 +110,7 @@ const postOrder = async (req, res) => {
     res.status(500).json({ message: "Error adding user and order" });
   }
 };
+
 
 // getUsers==============================================================================================================
 
@@ -295,7 +300,7 @@ const editUser = async (req, res) => {
   try {
     const { id } = req.params;
     const { name, phone, place, plan, paymentStatus, startDate, endDate } = req.body;
-    console.log('hello',req.body.latestOrder_id)
+    console.log('hello',startDate)
 
     // Find the user by ID
     const user = await User.findById(id);
@@ -327,17 +332,25 @@ const editUser = async (req, res) => {
       const currentDate = new Date();
       const orderStartDate = new Date(startDate);
       const orderEndDate = new Date(endDate);
-
-      if (!isNaN(orderStartDate) && !isNaN(orderEndDate)) {
-        if (orderStartDate <= currentDate && currentDate <= orderEndDate) {
+      
+    
+      
+      const strippedCurrentDate = stripTime(currentDate);
+      const strippedOrderStartDate = stripTime(orderStartDate);
+      const strippedOrderEndDate = stripTime(orderEndDate);
+      
+      console.log('dateCheck:', strippedCurrentDate, 'new:', strippedOrderStartDate);
+      
+      if (!isNaN(strippedOrderStartDate) && !isNaN(strippedOrderEndDate)) {
+        if (strippedOrderStartDate <= strippedCurrentDate && strippedCurrentDate <= strippedOrderEndDate) {
           orderStatus = "active";
         }
       } else {
         return res.status(400).json({ message: "Invalid date(s) provided" });
       }
+      
 
       const latestOrder = await Order.findOne({ userId: user._id }).sort({ orderStart: -1 });
-console.log('me',latestOrder)
       if (latestOrder) {
         latestOrder.plan = plan;
         latestOrder.orderStart = startDate;
@@ -411,12 +424,13 @@ const trashUser = async (req, res) => {
   }
 };
 
-// addLeave========================================================================================================================================
 
+// addLeave
 const addLeave = async (req, res) => {
   const { orderId } = req.params;
   const { leaveStart, leaveEnd } = req.body;
-  
+  console.log('leavestart:',leaveStart)
+
   try {
     const order = await Order.findById(orderId);
 
@@ -424,49 +438,52 @@ const addLeave = async (req, res) => {
       return res.status(404).json({ message: 'Order not found' });
     }
 
-    const leaveStartDate = new Date(leaveStart);
-    const leaveEndDate = new Date(leaveEnd);
+    const leaveStartDate = stripTime(new Date(leaveStart));
+    const leaveEndDate = stripTime(new Date(leaveEnd));
+    const orderEndDate = stripTime(new Date(order.orderEnd));
 
     // Check if the leave end date is within the order end date
-    const orderEndDate = new Date(order.orderEnd);
     if (leaveEndDate > orderEndDate) {
       return res.status(400).json({ message: 'Leave end date exceeds order end date' });
     }
 
     // Check for overlapping active leave
-    const activeLeave = order.leave.find(leave => new Date(leave.end) > new Date());
-    if (activeLeave) {
-      return res.status(400).json({ message: 'User already has an active leave' });
+    const activeLeaveIndex = order.leave.findIndex(leave => stripTime(new Date(leave.end)) >= stripTime(new Date()));
+
+    if (activeLeaveIndex !== -1) {
+      // Update the existing active leave dates
+      order.leave[activeLeaveIndex].start = leaveStartDate;
+      order.leave[activeLeaveIndex].end = leaveEndDate;
+      order.leave[activeLeaveIndex].numberOfLeaves = Math.ceil((leaveEndDate - leaveStartDate) / (1000 * 60 * 60 * 24)) + 1;
+    } else {
+      // Calculate the number of leave days
+      const differenceInTime = leaveEndDate - leaveStartDate;
+      const differenceInDays = Math.ceil(differenceInTime / (1000 * 60 * 60 * 24));
+      const numberOfLeaves = differenceInDays + 1;
+
+      // Add the leave to the order's leave array
+      order.leave.push({
+        start: leaveStartDate,
+        end: leaveEndDate,
+        numberOfLeaves,
+      });
     }
 
-    // Calculate the number of leave days
-    const differenceInTime = leaveEndDate - leaveStartDate;
-    const differenceInDays = Math.ceil(differenceInTime / (1000 * 60 * 60 * 24));
-    
-    // Add 1 to include the start date in the leave period
-    const numberOfLeaves = differenceInDays + 1;
-
-    // Add the leave to the order's leave array
-    order.leave.push({
-      start: leaveStartDate,
-      end: leaveEndDate,
-      numberOfLeaves,
-    });
-
     // Check if the present day falls within the leave period
-    const today = new Date();
+    const today = stripTime(new Date());
     if (today >= leaveStartDate && today <= leaveEndDate) {
       order.status = 'leave';
     }
 
     await order.save();
 
-    return res.status(200).json({ message: 'Leave added successfully' });
+    return res.status(200).json({ message: 'Leave added/updated successfully' });
   } catch (error) {
-    console.error('Error adding leave:', error);
+    console.error('Error adding/updating leave:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
+
 
 
 
@@ -477,21 +494,28 @@ async function updateOrderStatuses() {
     const orders = await Order.find({}); // Fetch all orders
 
     orders.forEach(order => {
-      const currentDate = new Date();
-      const orderStart = new Date(order.orderStart);
-      const orderEnd = new Date(order.orderEnd);
+      const currentDate = stripTime(new Date());
+      const orderStart = stripTime(new Date(order.orderStart));
+      const orderEnd = stripTime(new Date(order.orderEnd));
 
-      // Example logic to update statuses
-      if (currentDate < orderStart) {
+      // Check if the current date is a leave day
+      const isLeaveDay = order.leave.some(leave => {
+        const leaveStart = stripTime(new Date(leave.start));
+        const leaveEnd = stripTime(new Date(leave.end));
+        return currentDate >= leaveStart && currentDate <= leaveEnd;
+      });
+
+      if (isLeaveDay) {
+        order.status = 'leave';
+      } else if (currentDate < orderStart) {
         order.status = 'soon';
       } else if (currentDate >= orderStart && currentDate <= orderEnd) {
         order.status = 'active';
       } else if (currentDate > orderEnd) {
         order.status = 'expired';
       }
-console.log('ok',order.status)
-      // Save the updated order
 
+      // Save the updated order
       order.save();
     });
 
@@ -500,6 +524,7 @@ console.log('ok',order.status)
     console.error('Error updating order statuses:', error);
   }
 }
+
 
 const cleanupJunkOrders = async () => {
   try {
@@ -519,8 +544,8 @@ const cleanupJunkOrders = async () => {
   } 
 };
 
-// Schedule the function to run daily at midnight
-// cron.schedule('* * * * * *',cleanupJunkOrders );
+// Schedule the function to run every sec
+// cron.schedule('* * * * * *',updateOrderStatuses );
 
 // Schedule the function to run daily at midnight
 cron.schedule('0 0 * * *', updateOrderStatuses);
