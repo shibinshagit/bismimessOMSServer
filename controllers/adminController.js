@@ -6,6 +6,7 @@ const cron = require('node-cron');
 
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const Attendance = require("../Models/attendanceSchema");
 const stripTime = (date) => new Date(date.setHours(0, 0, 0, 0));
 
 // login=======================================================================================================================
@@ -485,7 +486,54 @@ const addLeave = async (req, res) => {
 };
 
 
+// add attandance
+const addAttendance = async (req, res) => {
+  
+  const { userId, period } = req.body;
+    
+  const today = new Date().setHours(0, 0, 0, 0);
+  console.log(today);
+  
+  const user = await User.findById(userId);
+  let attendanceRecord = await Attendance.findOne({ userId:user,date: { $gte: today, $lt: new Date(today).setHours(24, 0, 0, 0) } });
 
+  console.log("dasda",attendanceRecord);
+  
+  if (!attendanceRecord) {
+      attendanceRecord = new Attendance({ userId,date:today });
+  }
+
+  if (period === 'morning') {
+      attendanceRecord.morningAttendance = true;
+  } else if (period === 'afternoon') {
+      attendanceRecord.afternoonAttendance = true;
+  } else if (period === 'evening') {
+      attendanceRecord.eveningAttendance = true;
+  }
+
+  await attendanceRecord.save();
+  res.send({ message: 'Attendance marked', attendance: attendanceRecord });
+};
+
+
+//get attadance status
+
+const getAttendance = async (req,res)=>{
+  const { studentId, date } = req.params;
+  const user = await User.findById(studentId);
+  const today = new Date(date).setHours(0, 0, 0, 0);
+  console.log(today);
+  
+  
+  const attendanceRecord = await Attendance.findOne({ userId:studentId,date: { $gte: today, $lt: new Date(today).setHours(24, 0, 0, 0) } });
+
+
+  if (!attendanceRecord) {
+      return res.status(404).send({ message: 'Attendance record not found' });
+  }
+
+  res.send(attendanceRecord);
+}
 
 // ====================== Node cron=========================================================================================================================
 
@@ -558,5 +606,7 @@ module.exports = {
   editUser,
   deleteUser,
   trashUser,
-  addLeave
+  addLeave,
+  addAttendance,
+  getAttendance
 };

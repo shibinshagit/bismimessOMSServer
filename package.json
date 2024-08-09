@@ -6,6 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node index.js",
+    "dev": "nodemon index.js",
     "build": "echo \"No build script defined\""
   },
   "keywords": [],
@@ -21,9 +22,11 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.5.0",
     "node-cron": "^3.0.3",
-    "nodemon": "^3.1.4",
     "pdfkit": "^0.15.0",
     "razorpay": "^2.9.4",
     "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
   }
 }
