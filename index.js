@@ -3,7 +3,9 @@ const cors = require('cors');
 const session = require('express-session');
 const dotenv = require('dotenv');
 const connectDB = require('./dbConfig/db');
-const Routes = require('./routers/appRouter');
+const ApiRoutes = require('./routers/apiRouter');
+const AppRoutes = require('./routers/appRouter')
+const ServiceRoutes = require('./routers/servicesRouter')
 
 
 dotenv.config();
@@ -42,7 +44,9 @@ const host = process.env.HOST || 'localhost';
 
 
 // Routes
-app.use('/api', Routes);
+app.use('/api', ApiRoutes);
+app.use('/services', AppRoutes);
+app.use('/app', ServiceRoutes);
 
 app.use('*',(req, res) => {
   res.status(404).json({message: 'request not found'})
