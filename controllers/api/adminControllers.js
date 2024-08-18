@@ -1,12 +1,14 @@
 const mongoose = require("mongoose");
-const Admin = require("../Models/adminSchema");
-const User = require("../Models/UserSchema");
-const Order = require("../Models/OrderSchema");
 const cron = require('node-cron');
-
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-const Attendance = require("../Models/attendanceSchema");
+
+const Admin = require("../../Models/adminSchema");
+const User = require("../../Models/UserSchema");
+const Order = require("../../Models/OrderSchema");
+const Attendance = require("../../Models/attendanceSchema");
+
+
 const stripTime = (date) => new Date(date.setHours(0, 0, 0, 0));
 
 // login=======================================================================================================================
@@ -125,61 +127,137 @@ const postOrder = async (req, res) => {
 //   }
 // };
 
-const getUsers = async (req, res) => {
-  try {
-    const today = new Date();
+// const getUsers = async (req, res) => {
+//   try {
+//     const today = new Date();
 
-    // Fetch users with their orders where orderEnd is greater than or equal to today
-    const users = await User.aggregate([
-      {
-        $lookup: {
-          from: "orders",
-          localField: "orders",
-          foreignField: "_id",
-          as: "orders",
+//     // Fetch users with their orders where orderEnd is greater than or equal to today
+//     const users = await User.aggregate([
+//       {
+//         $lookup: {
+//           from: "orders",
+//           localField: "orders",
+//           foreignField: "_id",
+//           as: "orders",
+//         },
+//       },
+//       {
+//         $addFields: {
+//           orders: {
+//             $filter: {
+//               input: "$orders",
+//               as: "order",
+//               cond: { $gte: ["$$order.orderEnd", today] },
+//             },
+//           },
+//         },
+//       },
+//       {
+//         $addFields: {
+//           latestOrder: {
+//             $arrayElemAt: ["$orders", -1],
+//           },
+//         },
+//       },
+//       {
+//         $project: {
+//           name: 1,
+//           phone: 1,
+//           place: 1,
+//           paymentStatus: 1,
+//           startDate: 1,
+//           latestOrder: 1,
+//         },
+//       },
+//     ]);
+
+//     res.status(200).json(users);
+//   } catch (error) {
+//     console.error("Error fetching users:", error);
+//     res.status(500).json({ message: "Failed to fetch users" });
+//   }
+// };
+
+const getUsers = async (req, res) => {
+    try {
+      const today = new Date();
+      const { page = 1, limit = 500, searchTerm = '', filter = '' } = req.query;
+  
+      const skip = (page - 1) * limit;
+      const query = {};
+  
+      if (searchTerm) {
+        query.$or = [
+          { name: { $regex: searchTerm, $options: 'i' } },
+          { phone: { $regex: searchTerm, $options: 'i' } },
+          { place: { $regex: searchTerm, $options: 'i' } }
+        ];
+      }
+  
+      if (filter && filter !== 'All') {
+        query['latestOrder.status'] = filter;
+      }
+  
+      const users = await User.aggregate([
+        {
+          $lookup: {
+            from: "orders",
+            localField: "orders",
+            foreignField: "_id",
+            as: "orders",
+          },
         },
-      },
-      {
-        $addFields: {
-          orders: {
-            $filter: {
-              input: "$orders",
-              as: "order",
-              cond: { $gte: ["$$order.orderEnd", today] },
+        {
+          $addFields: {
+            orders: {
+              $filter: {
+                input: "$orders",
+                as: "order",
+                cond: { $gte: ["$$order.orderEnd", today] },
+              },
             },
           },
         },
-      },
-      {
-        $addFields: {
-          latestOrder: {
-            $arrayElemAt: ["$orders", -1],
+        {
+          $addFields: {
+            latestOrder: {
+              $arrayElemAt: ["$orders", -1],
+            },
           },
         },
-      },
-      {
-        $project: {
-          name: 1,
-          phone: 1,
-          place: 1,
-          paymentStatus: 1,
-          startDate: 1,
-          latestOrder: 1,
+        {
+          $match: query
         },
-      },
-    ]);
-
-    res.status(200).json(users);
-  } catch (error) {
-    console.error("Error fetching users:", error);
-    res.status(500).json({ message: "Failed to fetch users" });
-  }
-};
-
+        {
+          $skip: parseInt(skip, 10),
+        },
+        {
+          $limit: parseInt(limit, 10),
+        },
+        {
+          $project: {
+            name: 1,
+            phone: 1,
+            place: 1,
+            paymentStatus: 1,
+            startDate: 1,
+            latestOrder: 1,
+          },
+        },
+      ]);
+  
+      res.status(200).json(users);
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      res.status(500).json({ message: "Failed to fetch users" });
+    }
+  };
+  
 // getDailyStatistics=====================================================================================================
 
 const getDailyStatistics = async (req, res) => {
   const { date } = req.query;
+  console.log('hello',req.query)
   try {
     // Parse the date and create start and end times for the day
     const enteredDate = new Date(date); // Make sure 'date' is properly formatted
@@ -509,7 +587,7 @@ const addAttendance = async (req, res) => {
       attendanceRecord.afternoonAttendance = true;
   } else if (period === 'evening') {
       attendanceRecord.eveningAttendance = true;
-  }
+  } 
 
   await attendanceRecord.save();
   res.send({ message: 'Attendance marked', attendance: attendanceRecord });
