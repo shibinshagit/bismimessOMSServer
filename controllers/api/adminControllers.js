@@ -257,7 +257,6 @@ const getUsers = async (req, res) => {
 
 const getDailyStatistics = async (req, res) => {
   const { date } = req.query;
-  console.log('hello',req.query)
   try {
     // Parse the date and create start and end times for the day
     const enteredDate = new Date(date); // Make sure 'date' is properly formatted
