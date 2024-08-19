@@ -1,56 +1,62 @@
 const mongoose = require("mongoose");
-const cron = require('node-cron');
-const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const User = require("../../Models/AppUserModel");
 
-const Admin = require("../../Models/adminSchema");
-const User = require("../../Models/UserSchema");
-const Order = require("../../Models/OrderSchema");
-const Attendance = require("../../Models/attendanceSchema");
+// Utility function to generate OTP
+const generateOtp = () => Math.floor(1000 + Math.random() * 9000).toString();
 
-const stripTime = (date) => new Date(date.setHours(0, 0, 0, 0));
-
-// login=======================================================================================================================
+// login
 const login = async (req, res) => {
-    try {
+  const { phone } = req.body;
 
+  try {
+    let user = await User.findOne({ phone });
 
-        console.log('app is working')
-    //   const { email, password } = req.body;
-  
-    //   // Find the admin by email
-    //   const admin = await Admin.findOne({ email });
-  
-      if (!admin) {
-        return res.status(400).json({ error: "Unauthorized" });
-      }
-  
-      // Compare the provided password with the stored hash
-      const isMatch = await bcrypt.compare(password, admin.password);
-  
-      if (isMatch) {
-        // Generate a JWT token
-        const token = jwt.sign(
-          { id: admin._id, email: admin.email },
-          "your_jwt_secret_key",
-          { expiresIn: "1h" }
-        );
-        res.status(200).json({
-          success: true,
-          message: "Login successful",
-          token,
-        });
-      } else {
-        res.status(400).json({ error: "Unauthorized" });
-      }
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: "Internal server error" });
+    if (user) {
+      // User exists, generate and update OTP
+    //   user.otp = generateOtp();
+      user.otp = '1111'
+    } else {
+      // User does not exist, create new user and generate OTP
+      user = new User({
+        phone,
+        // otp: generateOtp(),
+        otp: '1111',
+      });
     }
-  };
-  
+
+    await user.save();
 
 
-  module.exports = {
-    login
+    res.status(200).json({ success: true, message: "OTP sent", phone });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Server error" });
   }
+};
+
+// OTP check
+const otpCheck = async (req, res) => {
+  const { phone, otp } = req.body;
+
+  try {
+    const user = await User.findOne({ phone });
+
+    if (user && user.otp === otp) {
+      // OTP matches, create JWT token
+      const token = jwt.sign({ id: user._id }, "your_jwt_secret_key", {
+        expiresIn: "1h",
+      });
+
+      res.status(200).json({ success: true, message: "OTP verified", user, token });
+    } else {
+      res.status(400).json({ success: false, message: "Invalid OTP" });
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+module.exports = {
+  login,
+  otpCheck,
+};
