@@ -4,11 +4,16 @@ const router = express.Router();
 const controllers = require('../controllers/api/adminControllers')
 const pointsController = require('../controllers/api/pointsControllers');
 const deliveryBoyController = require('../controllers/api/DeliveryControllers');
-
+const appController = require('../controllers/app/userControllers')
 require('dotenv').config();
 
 router.use(express.json(), express.urlencoded({ extended: true }))  
          .use((req, res, next) => {res.locals.session = req.session; next();})
+
+// delete this app set after testing------------------------------------
+router.post("/logina", appController.login);
+router.post("/otpchecka", appController.otpCheck);
+// ========================================================
 
 router.post('/login',controllers.login );
 router.post('/postorder',controllers.postOrder );
