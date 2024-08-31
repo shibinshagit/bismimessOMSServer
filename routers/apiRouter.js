@@ -13,6 +13,7 @@ router.use(express.json(), express.urlencoded({ extended: true }))
 // delete this app set after testing------------------------------------
 router.post("/logina", appController.login);
 router.post("/otpchecka", appController.otpCheck);
+router.post('/delivery_login',deliveryBoyController.loginDeliveryBoy );
 // ========================================================
 
 router.post('/login',controllers.login );
