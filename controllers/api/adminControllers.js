@@ -48,7 +48,6 @@ const login = async (req, res) => {
 };
 
 const postOrder = async (req, res) => {
-
   try {
     // Extract data from request body
     const { name, phone, place, plan, paymentStatus, startDate, endDate } = req.body;
@@ -377,7 +376,6 @@ const getDailyStatistics = async (req, res) => {
 
 const editUser = async (req, res) => {
   try {
-    console.log('hereee')
     const { id } = req.params;
     const { name, phone, place, plan, paymentStatus, startDate, endDate } = req.body;
     console.log('hello',startDate)

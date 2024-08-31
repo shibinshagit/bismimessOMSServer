@@ -42,7 +42,6 @@ connectDB();
 const port = process.env.PORT || 5000;
 const host = process.env.HOST || 'localhost';  
 
-
 // Routes
 app.use('/api', ApiRoutes);
 app.use('/app', AppRoutes);
