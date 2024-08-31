@@ -2,6 +2,26 @@
 
 const DeliveryBoy = require('../../Models/DeliveryBoySchema'); 
 
+// Login delivery boy
+const loginDeliveryBoy = async (req, res) => {
+  console.log('shihbihbshsjsjsu')
+  const { phone, code } = req.body;
+
+  try {
+    // Find the delivery boy by phone number and code
+    const deliveryBoy = await DeliveryBoy.findOne({ phone, code });
+
+    if (!deliveryBoy) {
+      return res.status(401).json({ error: 'Invalid phone number or code' });
+    }
+
+    // If found, return success response
+    res.status(200).json({ message: 'Login successful', deliveryBoy });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to login delivery boy' });
+  }
+};
+
 // Fetch all delivery boys
 const getAllDeliveryBoys = async (req, res) => {
   try {
@@ -70,6 +90,7 @@ const deleteDeliveryBoy = async (req, res) => {
 };
 
 module.exports = {
+  loginDeliveryBoy,
   getAllDeliveryBoys,
   addNewDeliveryBoy,
   editDeliveryBoy,
