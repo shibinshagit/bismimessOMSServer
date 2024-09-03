@@ -4,7 +4,7 @@ const DeliveryBoy = require('../../Models/DeliveryBoySchema');
 
 // Login delivery boy
 const loginDeliveryBoy = async (req, res) => {
-  console.log('shihbihbshsjsjsu')
+
   const { phone, code } = req.body;
 
   try {

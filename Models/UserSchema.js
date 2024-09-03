@@ -4,8 +4,9 @@ const Schema = mongoose.Schema;
 const userSchema = new Schema({
   name: { type: String, required: true },
   phone: { type: String, required: true },
-  // place: { type: Schema.Types.ObjectId, ref: 'Point', required: true },
-  place: { type: String, required: true },
+  point: { type: Schema.Types.ObjectId, ref: 'Point', required: true },
+  // place: { type: String, required: true },
+  location: { type: String},
   paymentStatus: { type: Boolean, required: true },
   status: { type: String, enum: ['Packed', 'Out', 'Delivered'], default: 'Packed' },
   startDate: { type: Date, default: Date.now },
