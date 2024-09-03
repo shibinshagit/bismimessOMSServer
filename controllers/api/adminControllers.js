@@ -50,7 +50,10 @@ const login = async (req, res) => {
 const postOrder = async (req, res) => {
   try {
     // Extract data from request body
-    const { name, phone, place, plan, paymentStatus, startDate, endDate } = req.body;
+  
+    const { name, phone, point, plan, paymentStatus, startDate, endDate } = req.body;
+    console.log('jhjdfjhjsdh',req.body)
+
     const existingUser = await User.findOne({ phone });
     if (existingUser) {
       return res.status(400).json({ message: "Phone number already exists" });
@@ -59,11 +62,11 @@ const postOrder = async (req, res) => {
     const newUser = new User({
       name,
       phone,
-      place,
+      point,
       paymentStatus,
     });
 
-    if (paymentStatus) {
+    if (paymentStatus) {   
       if (plan.length === 0) {
         return res.status(204).json({ message: "Fill all plan data" });
       }
