@@ -185,6 +185,7 @@ const getUsers = async (req, res) => {
     try {
       const today = new Date();
       const { page = 1, limit = 500, searchTerm = '', filter = '' } = req.query;
+
   
       const skip = (page - 1) * limit;
       const query = {};
@@ -192,8 +193,7 @@ const getUsers = async (req, res) => {
       if (searchTerm) {
         query.$or = [
           { name: { $regex: searchTerm, $options: 'i' } },
-          { phone: { $regex: searchTerm, $options: 'i' } },
-          { place: { $regex: searchTerm, $options: 'i' } }
+          { phone: { $regex: searchTerm, $options: 'i' } }
         ];
       }
   
@@ -241,14 +241,14 @@ const getUsers = async (req, res) => {
           $project: {
             name: 1,
             phone: 1,
-            place: 1,
+            point: 1,
+            location: 1,
             paymentStatus: 1,
             startDate: 1,
             latestOrder: 1,
           },
         },
       ]);
-  
       res.status(200).json(users);
     } catch (error) {
       console.error("Error fetching users:", error);
@@ -672,8 +672,28 @@ const cleanupJunkOrders = async () => {
   } 
 };
 
+
+const update = async () => {
+  try {
+    // Update all user documents
+    const result = await User.updateMany(
+      { place: { $exists: true } }, // Only update documents where 'place' exists
+      {
+       
+        $set: { location: "Brototype" } // Add 'location' field with value 'kochi'
+      }
+    );
+
+    console.log(`Updated ${result.modifiedCount} users.`);
+  } catch (err) {
+    console.error('Error updating users:', err);
+  }
+};
+
+
+
 // Schedule the function to run every sec
-// cron.schedule('* * * * * *',updateOrderStatuses );
+// cron.schedule('* * * * * *',update );
 
 // Schedule the function to run daily at midnight
 cron.schedule('0 0 * * *', updateOrderStatuses);
