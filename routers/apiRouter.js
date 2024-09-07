@@ -37,6 +37,4 @@ router.delete('/delivery-boys/:id', deliveryBoyController.deleteDeliveryBoy);
 
 module.exports = router;
 
-
-
-module.exports = router;      
+   

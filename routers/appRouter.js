@@ -10,7 +10,7 @@ router.use(express.json(), express.urlencoded({ extended: true }))
 
 
 // app Routes============================================================================
-router.post("/login", appController.login);
+router.post("/login", appController.login);  
 router.post("/otpcheck", appController.otpCheck);
 
 
