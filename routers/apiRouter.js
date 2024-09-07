@@ -15,7 +15,7 @@ router.use(express.json(), express.urlencoded({ extended: true }))
 
 router.post('/login',controllers.login );
 router.post('/postorder',controllers.postOrder );
-router.get('/users',controllers.getUsers );
+router.get('/users/:id',controllers.getUsers );
 router.get('/statistics',controllers.getDailyStatistics );
 router.put('/updateUser/:id',controllers.editUser);  
 router.delete('/deleteUser/:id', controllers.deleteUser);
