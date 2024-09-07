@@ -180,10 +180,14 @@ const postOrder = async (req, res) => {
 //     res.status(500).json({ message: "Failed to fetch users" });
 //   }
 // };
+
+
 const getUsers = async (req, res) => {
   try {
     const today = new Date();
     const { page = 1, limit = 500, searchTerm = '', filter = '' } = req.query;
+    const { id: pointId } = req.params;  // Get the point ID from the route parameters
+
     const skip = (page - 1) * limit;
     const query = {};
 
@@ -196,6 +200,10 @@ const getUsers = async (req, res) => {
 
     if (filter && filter !== 'All') {
       query['latestOrder.status'] = filter;
+    }
+
+    if (pointId) {
+      query['point'] = new mongoose.Types.ObjectId(pointId);  // Convert pointId to ObjectId correctly
     }
 
     const users = await User.aggregate([
@@ -257,6 +265,7 @@ const getUsers = async (req, res) => {
     res.status(500).json({ message: "Failed to fetch users" });
   }
 };
+
 
 
   
