@@ -5,8 +5,10 @@ const userSchema = new Schema({
   name: { type: String, required: true },
   phone: { type: String, required: true },
   point: { type: Schema.Types.ObjectId, ref: 'Point', required: true },
-  // place: { type: String, required: true },
-  location: { type: String},
+  location: {
+    latitude: { type: Number },
+    longitude: { type: Number }
+  },
   paymentStatus: { type: Boolean, required: true },
   status: { type: String, enum: ['Packed', 'Out', 'Delivered'], default: 'Packed' },
   startDate: { type: Date, default: Date.now },
@@ -16,3 +18,4 @@ const userSchema = new Schema({
 
 const User = mongoose.model('User', userSchema);
 module.exports = User;
+

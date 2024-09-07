@@ -12,6 +12,7 @@ router.use(express.json(), express.urlencoded({ extended: true }))
 
 
 // ========================================================
+router.put('/user/:userId', controllers.location);
 
 router.post('/login',controllers.login );
 router.post('/postorder',controllers.postOrder );
@@ -34,6 +35,9 @@ router.get('/delivery-boys', deliveryBoyController.getAllDeliveryBoys);
 router.post('/delivery-boys', deliveryBoyController.addNewDeliveryBoy);
 router.put('/delivery-boys/:id', deliveryBoyController.editDeliveryBoy);
 router.delete('/delivery-boys/:id', deliveryBoyController.deleteDeliveryBoy);
+
+
+
 
 module.exports = router;
 
