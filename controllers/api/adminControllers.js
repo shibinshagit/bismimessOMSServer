@@ -628,6 +628,57 @@ const getAttendance = async (req,res)=>{
   res.send(attendanceRecord);
 }
 
+
+
+
+// ===========================================location temp
+const location = async (req, res) => {
+  try {
+    console.log('here it is')
+    const { userId } = req.params; // Assuming userId is passed as a route parameter
+    const { latitude, longitude } = req.body; // Extract latitude and longitude from the request body
+
+    // Find the user by their ID and update the location
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { location: { latitude, longitude } },
+      { new: true } // Return the updated document
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.status(200).json({
+      message: "Location updated successfully",
+      user: updatedUser,
+    });
+  } catch (error) {
+    console.error("Error updating location:", error);
+    res.status(500).json({ message: "Error updating location" });
+  }
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // ====================== Node cron=========================================================================================================================
 
 async function updateOrderStatuses() {
@@ -721,5 +772,6 @@ module.exports = {
   trashUser,
   addLeave,
   addAttendance,
-  getAttendance
+  getAttendance,
+  location
 };
