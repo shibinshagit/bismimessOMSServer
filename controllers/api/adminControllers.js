@@ -180,81 +180,85 @@ const postOrder = async (req, res) => {
 //     res.status(500).json({ message: "Failed to fetch users" });
 //   }
 // };
-
 const getUsers = async (req, res) => {
-    try {
-      const today = new Date();
-      const { page = 1, limit = 500, searchTerm = '', filter = '' } = req.query;
+  try {
+    const today = new Date();
+    const { page = 1, limit = 500, searchTerm = '', filter = '' } = req.query;
+    const skip = (page - 1) * limit;
+    const query = {};
 
-  
-      const skip = (page - 1) * limit;
-      const query = {};
-  
-      if (searchTerm) {
-        query.$or = [
-          { name: { $regex: searchTerm, $options: 'i' } },
-          { phone: { $regex: searchTerm, $options: 'i' } }
-        ];
-      }
-  
-      if (filter && filter !== 'All') {
-        query['latestOrder.status'] = filter;
-      }
-  
-      const users = await User.aggregate([
-        {
-          $lookup: {
-            from: "orders",
-            localField: "orders",
-            foreignField: "_id",
-            as: "orders",
-          },
-        },
-        {
-          $addFields: {
-            orders: {
-              $filter: {
-                input: "$orders",
-                as: "order",
-                cond: { $gte: ["$$order.orderEnd", today] },
-              },
-            },
-          },
-        },
-        {
-          $addFields: {
-            latestOrder: {
-              $arrayElemAt: ["$orders", -1],
-            },
-          },
-        },
-        {
-          $match: query
-        },
-        {
-          $skip: parseInt(skip, 10),
-        },
-        {
-          $limit: parseInt(limit, 10),
-        },
-        {
-          $project: {
-            name: 1,
-            phone: 1,
-            point: 1,
-            location: 1,
-            paymentStatus: 1,
-            startDate: 1,
-            latestOrder: 1,
-          },
-        },
-      ]);
-      res.status(200).json(users);
-    } catch (error) {
-      console.error("Error fetching users:", error);
-      res.status(500).json({ message: "Failed to fetch users" });
+    if (searchTerm) {
+      query.$or = [
+        { name: { $regex: searchTerm, $options: 'i' } },
+        { phone: { $regex: searchTerm, $options: 'i' } }
+      ];
     }
-  };
+
+    if (filter && filter !== 'All') {
+      query['latestOrder.status'] = filter;
+    }
+
+    const users = await User.aggregate([
+      {
+        $lookup: {
+          from: "orders",
+          localField: "orders",
+          foreignField: "_id",
+          as: "orders",
+        },
+      },
+      {
+        $addFields: {
+          latestOrder: {
+            $arrayElemAt: ["$orders", -1],  // Get the last order in the orders array
+          },
+        },
+      },
+      {
+        $match: query,
+      },
+      {
+        $addFields: {
+          isPastOrder: {
+            $cond: {
+              if: { $lt: ["$latestOrder.orderEnd", today] },  // Check if latestOrder.orderEnd is less than today
+              then: 1,
+              else: 0,
+            },
+          },
+        },
+      },
+      {
+        $sort: { isPastOrder: -1 },  // Sort by isPastOrder (1 means older order first)
+      },
+      {
+        $skip: parseInt(skip, 10),
+      },
+      {
+        $limit: parseInt(limit, 10),
+      },
+      {
+        $project: {
+          name: 1,
+          phone: 1,
+          point: 1,
+          location: 1,
+          paymentStatus: 1,
+          startDate: 1,
+          latestOrder: 1,  // Return the latest order details
+          isPastOrder: 1,  // Keep this for debugging if needed
+        },
+      },
+    ]);
+
+    res.status(200).json(users);
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    res.status(500).json({ message: "Failed to fetch users" });
+  }
+};
+
+
   
 // getDailyStatistics=====================================================================================================
 
@@ -693,7 +697,7 @@ const update = async () => {
 
 
 // Schedule the function to run every sec
-// cron.schedule('* * * * * *',update );
+// cron.schedule('* * * * * *',updateOrderStatuses );
 
 // Schedule the function to run daily at midnight
 cron.schedule('0 0 * * *', updateOrderStatuses);
