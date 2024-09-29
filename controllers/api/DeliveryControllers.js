@@ -15,7 +15,7 @@ const loginDeliveryBoy = async (req, res) => {
     const deliveryBoy = await DeliveryBoy.findOne({ phone, code });
 
     if (!deliveryBoy) {
-      return res.status(401).json({ error: 'Invalid phone number or code' });
+      return res.status(401).json({ error: 'Invalid phone number or codes' });
     }
     const token = jwt.sign(
       { id: deliveryBoy._id },
