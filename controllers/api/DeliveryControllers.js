@@ -19,7 +19,8 @@ const loginDeliveryBoy = async (req, res) => {
     }
     const token = jwt.sign(
       { id: deliveryBoy._id },
-      process.env.JWTSECRET,
+      // process.env.JWTSECRET,
+      'NEWSECRET',
       { expiresIn: "1h" }
     );
   
@@ -38,7 +39,7 @@ const getUserProfile = async (req, res) => {
     }
 
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, process.env.JWTSECRET);
+    const decoded = jwt.verify(token, 'NEWSECRET');
 
     const userId = decoded.id;
     const user = await DeliveryBoy.findById(userId);
