@@ -181,7 +181,6 @@ const postOrder = async (req, res) => {
 //   }
 // };
 
-
 const getUsers = async (req, res) => {
   try {
     const today = new Date();
@@ -223,6 +222,13 @@ const getUsers = async (req, res) => {
         },
       },
       {
+        $addFields: {
+          latestAttendance: {
+            $arrayElemAt: ["$attendance", -1],  // Get the latest attendance in the attendance array
+          },
+        },
+      },
+      {
         $match: query,
       },
       {
@@ -254,6 +260,7 @@ const getUsers = async (req, res) => {
           paymentStatus: 1,
           startDate: 1,
           latestOrder: 1,  // Return the latest order details
+          latestAttendance: 1,  // Return only the latest attendance details
           isPastOrder: 1,  // Keep this for debugging if needed
         },
       },
@@ -265,8 +272,6 @@ const getUsers = async (req, res) => {
     res.status(500).json({ message: "Failed to fetch users" });
   }
 };
-
-
 
   
 // getDailyStatistics=====================================================================================================
@@ -739,25 +744,30 @@ const cleanupJunkOrders = async () => {
 
 const update = async () => {
   try {
-    // Update all user documents
+    // Define default attendance data
+    const defaultAttendance = {
+      date: new Date(),  // You can use a default date or set it to null
+      present: false,    // Default to not present
+      breakfast: false,  // Default to not having breakfast
+      lunch: false,      // Default to not having lunch
+      dinner: false      // Default to not having dinner
+    };
+
+    // Update all user documents that don't have attendance field
     const result = await User.updateMany(
-      { place: { $exists: true } }, // Only update documents where 'place' exists
-      {
-       
-        $set: { location: "Brototype" } // Add 'location' field with value 'kochi'
-      }
+      { attendance: { $exists: false } }, // Only update users without attendance field
+      { $set: { attendance: [defaultAttendance] } } // Set the default attendance
     );
 
-    console.log(`Updated ${result.modifiedCount} users.`);
+    console.log(`Updated ${result.nModified} users with attendance field.`);
   } catch (err) {
     console.error('Error updating users:', err);
   }
 };
 
+// Schedule the function to run every second (adjust for your needs)
+// cron.schedule('* * * * * *', update);
 
-
-// Schedule the function to run every sec
-// cron.schedule('* * * * * *',updateOrderStatuses );
 
 // Schedule the function to run daily at midnight
 cron.schedule('0 0 * * *', updateOrderStatuses);
