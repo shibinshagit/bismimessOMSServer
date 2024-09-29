@@ -14,6 +14,9 @@ router.use(express.json(), express.urlencoded({ extended: true }))
 // app Routes============================================================================
 
 router.post('/delivery_login',DeliveryControllers.loginDeliveryBoy );
+router.get('/DBData',DeliveryControllers.getUserProfile );
+router.get('/deliverypoints/:id',DeliveryControllers.getDeliverypoints );
+router.get('/orders/:id',DeliveryControllers.getOrders );
 
 // Export the router
 module.exports = router;      
