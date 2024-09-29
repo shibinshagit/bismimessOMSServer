@@ -15,7 +15,7 @@ const loginDeliveryBoy = async (req, res) => {
     const deliveryBoy = await DeliveryBoy.findOne({ phone, code });
 
     if (!deliveryBoy) {
-      return res.status(401).json({ error: 'Invalid phone number or codes' });
+      return res.status(401).json({ error: 'Invalid phone number or code' });
     }
     const token = jwt.sign(
       { id: deliveryBoy._id },
@@ -25,7 +25,7 @@ const loginDeliveryBoy = async (req, res) => {
   
     res.status(200).json({ message: 'Login successful', token });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to login delivery boy' });
+    res.status(500).json({ error: 'Failed to login delivery boy data',phone,code });
   }
 };
 
