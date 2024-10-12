@@ -52,7 +52,7 @@ const postOrder = async (req, res) => {
     // Extract data from request body
   
     const { name, phone, point, plan, paymentStatus, startDate, endDate } = req.body;
-    console.log('jhjdfjhjsdh',req.body)
+    console.log('userData:',req.body)
 
     const existingUser = await User.findOne({ phone });
     if (existingUser) {
@@ -398,9 +398,8 @@ const getDailyStatistics = async (req, res) => {
 const editUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, phone, place, plan, paymentStatus, startDate, endDate } = req.body;
-    console.log('hello',startDate)
-
+    const { name, phone, point, plan, paymentStatus, startDate, endDate } = req.body;
+    
     // Find the user by ID
     const user = await User.findById(id);
     if (!user) {
@@ -418,7 +417,7 @@ const editUser = async (req, res) => {
 
     // Update user details
     user.name = name;
-    user.place = place;
+    user.point = point;
     user.paymentStatus = paymentStatus;
 
     // Handle orders if payment status is updated
@@ -773,7 +772,7 @@ const update = async () => {
 cron.schedule('0 0 * * *', updateOrderStatuses);
 
 module.exports = {
-  login,
+  login, 
   postOrder,
   getUsers,
   getDailyStatistics,
