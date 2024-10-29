@@ -738,7 +738,7 @@ const deleteUser = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Delete all orders associated with the user
+    // Delete all orders associated with the users
     await Order.deleteMany({ userId });
 
     // Delete the user
