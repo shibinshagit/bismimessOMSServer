@@ -15,13 +15,24 @@ router.use(express.json(), express.urlencoded({ extended: true }))
 router.put('/user/:userId', controllers.location);
 
 router.post('/login',controllers.login );
-router.post('/postorder',controllers.postOrder );
+router.post('/users',controllers.postUser );
+router.post('/orders',controllers.postOrder );
+router.post('/users',controllers.postUser );
 router.get('/users/:id',controllers.getUsers );
+router.get('/user/:id', controllers.getUserById);
 router.get('/statistics',controllers.getDailyStatistics );
 router.put('/updateUser/:id',controllers.editUser);  
 router.delete('/deleteUser/:id', controllers.deleteUser);
 router.put('/trashUser/:id', controllers.trashUser);
+// Add a new leave
 router.post('/addLeave/:orderId', controllers.addLeave);
+
+// Edit an existing leave
+router.put('/editLeave/:orderId/:leaveId', controllers.editLeave);
+
+// Delete a leave
+router.delete('/deleteLeave/:orderId/:leaveId', controllers.deleteLeave);
+router.get('/pointsWithLeaveToday', controllers.getPointsWithLeaveToday);
 router.post('/attendance', controllers.addAttendance);
 router.get('/attendance/:studentId/:date',controllers.getAttendance );
 

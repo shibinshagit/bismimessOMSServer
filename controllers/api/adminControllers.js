@@ -5,11 +5,12 @@ const jwt = require("jsonwebtoken");
 
 const Admin = require("../../Models/adminSchema");
 const User = require("../../Models/UserSchema");
+const Point = require("../../Models/PointSchema");
 const Order = require("../../Models/OrderSchema");
 const Attendance = require("../../Models/attendanceSchema");
 
 
-const stripTime = (date) => new Date(date.setHours(0, 0, 0, 0));
+// const stripTime = (date) => new Date(date.setHours(0, 0, 0, 0));
 
 // login=======================================================================================================================
 const login = async (req, res) => {
@@ -46,78 +47,140 @@ const login = async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 };
-
-const postOrder = async (req, res) => {
+const postUser = async (req, res) => {
   try {
-    // Extract data from request body
-  
-    const { name, phone, point, plan, paymentStatus, startDate, endDate } = req.body;
-    console.log('userData:',req.body)
+    const { name, phone, email, point, status } = req.body;
 
+    // Check if user with the phone number already exists
     const existingUser = await User.findOne({ phone });
     if (existingUser) {
       return res.status(400).json({ message: "Phone number already exists" });
     }
 
+    // Create new user
     const newUser = new User({
       name,
       phone,
+      email,
       point,
-      paymentStatus,
+      status,
     });
-
-    if (paymentStatus) {   
-      if (plan.length === 0) {
-        return res.status(204).json({ message: "Fill all plan data" });
-      }
-
-      let orderStatus = "soon";
-
-
-      const currentDate = stripTime(new Date());
-      const orderStartDate = stripTime(new Date(startDate));
-      const orderEndDate = stripTime(new Date(endDate));
-
-      if (!isNaN(orderStartDate) && !isNaN(orderEndDate)) {
-        if (orderStartDate <= currentDate && currentDate <= orderEndDate) {
-          orderStatus = "active";
-        }
-      } else {
-        console.error("Invalid date(s) provided");
-        return res.status(400).json({ message: "Invalid date(s) provided" });
-      }
-
-      console.log(orderStatus);
-
-      const newOrder = new Order({
-        userId: newUser._id,
-        plan,
-        orderStart: startDate,
-        orderEnd: endDate,
-        leave: [],
-        status: orderStatus,
-      });
-
-      await newOrder.save();
-      newUser.orders.push(newOrder._id);
-    }
 
     await newUser.save();
 
-    // Emit socket event with new user data
-    // req.io.sockets.emit('dataUpdated', { user: newUser });
-
-    res.status(200).json({
-      message: "User and order added successfully",
+    res.status(201).json({
+      message: "User added successfully",
       userId: newUser._id,
     });
   } catch (error) {
-    console.error("Error adding user and order:", error);
-    res.status(500).json({ message: "Error adding user and order" });
+    console.error("Error adding user:", error);
+    res.status(500).json({ message: "Error adding user" });
   }
 };
 
+// Helper function to strip time from Date
+const stripTime = (date) => {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+};
+   
+// POST /api/orders
+const postOrder = async (req, res) => {
+  try {
+    const {
+      userId,                                      
+      plan,
+      paymentStatus,
+      amount,
+      paymentMethod,
+      paymentId,
+      orderStart,
+      orderEnd,
+    } = req.body;
 
+    console.log('Order Data:', req.body);
+
+    // Validate required fields
+    if (!userId) {
+      return res.status(400).json({ message: "User ID is required" });
+    }
+
+    if (!plan || plan.length === 0) {
+      return res.status(400).json({ message: "Plan is required" });
+    }
+
+    if (!paymentStatus) {
+      return res.status(400).json({ message: "Payment status is required" });
+    }
+
+    if (!orderStart || !orderEnd) {
+      return res.status(400).json({ message: "Order start and end dates are required" });
+    }
+
+    // Check if user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Determine order status
+    let orderStatus = "Expiring Soon";
+
+    const currentDate = stripTime(new Date());
+    const orderStartDate = stripTime(new Date(orderStart));
+    const orderEndDate = stripTime(new Date(orderEnd));
+
+    if (!isNaN(orderStartDate) && !isNaN(orderEndDate)) {
+      if (orderStartDate <= currentDate && currentDate <= orderEndDate) {
+        orderStatus = "Active";
+      } else if (currentDate < orderStartDate) {
+        orderStatus = "Expiring Soon";
+      } else {
+        orderStatus = "Expired";
+      }
+    } else {
+      console.error("Invalid date(s) provided");
+      return res.status(400).json({ message: "Invalid date(s) provided" });
+    }
+
+    // Build order data
+    const orderData = {
+      userId,
+      plan,
+      orderStart,
+      orderEnd,
+      leave: [],
+      status: orderStatus,
+      paymentStatus,
+    };
+
+    // Handle payment details if paymentStatus is 'Completed'
+    if (paymentStatus === 'Completed') {
+      if (!amount || !paymentMethod || !paymentId) {
+        return res.status(400).json({ message: "Payment details are required when payment is completed" });
+      }
+      orderData.amount = amount;
+      orderData.paymentMethod = paymentMethod;
+      orderData.paymentId = paymentId;
+    }
+
+    // Create new order
+    const newOrder = new Order(orderData);
+
+    await newOrder.save();
+
+    // Add order ID to user's orders array
+    user.orders.push(newOrder._id);
+    await user.save();
+
+    res.status(201).json({
+      message: "Order added successfully",
+      orderId: newOrder._id,
+    });
+  } catch (error) {
+    console.error("Error adding order:", error);
+    res.status(500).json({ message: "Error adding order" });
+  }
+};
 // getUsers==============================================================================================================
 
 // const getUsers = async (req, res) => {
@@ -265,7 +328,7 @@ const getUsers = async (req, res) => {
         },
       },
     ]);
-
+console.log('data::',users[0])
     res.status(200).json(users);
   } catch (error) {
     console.error("Error fetching users:", error);
@@ -273,6 +336,192 @@ const getUsers = async (req, res) => {
   }
 };
 
+// get user by id--
+const getUserById = async (req, res) => {
+  try {
+    const { id } = req.params;  // Get the user ID from the route parameters
+
+    if (!id) {
+      return res.status(400).json({ message: "User ID is required" });
+    }
+
+    const user = await User.aggregate([
+      {
+        $match: { _id: new mongoose.Types.ObjectId(id) }  // Match the user with the given ID
+      },
+      {
+        $lookup: {
+          from: "orders",
+          localField: "orders",
+          foreignField: "_id",
+          as: "orders",
+        },
+      },
+      {
+        $addFields: {
+          latestOrder: {
+            $arrayElemAt: ["$orders", -1],  // Get the last order in the orders array
+          },
+        },
+      },
+      {
+        $addFields: {
+          latestAttendance: {
+            $arrayElemAt: ["$attendance", -1],  // Get the latest attendance in the attendance array
+          },
+        },
+      },
+      {
+        $project: {
+          name: 1,
+          phone: 1,
+          point: 1,
+          location: 1,
+          paymentStatus: 1,
+          startDate: 1,
+          latestOrder: 1,  // Return the latest order details
+          latestAttendance: 1,  // Return only the latest attendance details
+        },
+      },
+    ]);
+
+    if (!user || user.length === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.status(200).json(user[0]);  // Return the first item in the array since the aggregation returns an array
+  } catch (error) {
+    console.error("Error fetching user by ID:", error);
+    res.status(500).json({ message: "Failed to fetch user" });
+  }
+};
+
+const getPointsWithLeaveToday = async (req, res) => {
+  try {
+    const today = stripTime(new Date());
+
+    const pointsWithLeave = await Point.aggregate([
+      {
+        $lookup: {
+          from: 'users', // Ensure the collection name is correct (usually lowercase plural)
+          localField: '_id',
+          foreignField: 'point',
+          as: 'users',
+        },
+      },
+      {
+        $lookup: {
+          from: 'orders', // Ensure the collection name is correct (usually lowercase plural)
+          localField: 'users.orders', // 'users' has an array 'orders'
+          foreignField: '_id',
+          as: 'orders',
+        },
+      },
+      {
+        $addFields: {
+          users: {
+            $map: {
+              input: '$users',
+              as: 'user',
+              in: {
+                $mergeObjects: [
+                  '$$user',
+                  {
+                    latestOrder: {
+                      $arrayElemAt: [
+                        {
+                          $filter: {
+                            input: '$orders',
+                            as: 'order',
+                            cond: { $eq: ['$$order.userId', '$$user._id'] },
+                          },
+                        },
+                        -1,
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+      {
+        $project: {
+          orders: 0, // Exclude orders as they are now embedded in users.latestOrder
+        },
+      },
+      {
+        $addFields: {
+          users: {
+            $map: {
+              input: '$users',
+              as: 'user',
+              in: {
+                _id: '$$user._id',
+                name: '$$user.name',
+                phone: '$$user.phone',
+                email: '$$user.email',
+                // Include other user fields as needed
+                latestOrder: '$$user.latestOrder',
+              },
+            },
+          },
+        },
+      },
+      {
+        $addFields: {
+          usersOnLeaveToday: {
+            $filter: {
+              input: '$users',
+              as: 'user',
+              cond: {
+                $and: [
+                  { $ifNull: ['$$user.latestOrder', false] }, // Ensure latestOrder exists
+                  {
+                    $gt: [
+                      {
+                        $size: {
+                          $filter: {
+                            input: '$$user.latestOrder.leave',
+                            as: 'leave',
+                            cond: {
+                              $and: [
+                                { $lte: ['$$leave.start', today] },
+                                { $gte: ['$$leave.end', today] },
+                              ],
+                            },
+                          },
+                        },
+                      },
+                      0,
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+      {
+        $project: {
+          place: 1, // 'place' field from Point model
+          totalUsers: { $size: '$users' },
+          totalLeaveToday: { $size: '$usersOnLeaveToday' },
+          usersOnLeaveToday: 1,
+        },
+      },
+      {
+        $sort: { place: 1 }, // Sort points alphabetically by 'place'
+      },
+    ]);
+
+    res.status(200).json(pointsWithLeave);
+  } catch (error) {
+    console.error("Error fetching points with leave today:", error);
+    res.status(500).json({ message: "Failed to fetch points with leave today" });
+  }
+};
   
 // getDailyStatistics=====================================================================================================
 
@@ -524,10 +773,45 @@ const trashUser = async (req, res) => {
 
 
 // addLeave
+
+/**
+ * Updates the status of an order based on current date, order dates, and leaves.
+ * @param {Object} order - The order document to update.
+ */
+const updateOrderStatus = async (order) => {
+  const currentDate = stripTime(new Date());
+  const orderStart = stripTime(new Date(order.orderStart));
+  const orderEnd = stripTime(new Date(order.orderEnd));
+
+  // Check if the current date is a leave day
+  const isLeaveDay = order.leave.some((leave) => {
+    const leaveStart = stripTime(new Date(leave.start));
+    const leaveEnd = stripTime(new Date(leave.end));
+    return currentDate >= leaveStart && currentDate <= leaveEnd;
+  });
+
+  if (isLeaveDay) {
+    order.status = 'leave';
+  } else if (currentDate < orderStart) {
+    order.status = 'soon';
+  } else if (currentDate >= orderStart && currentDate <= orderEnd) {
+    order.status = 'active';
+  } else if (currentDate > orderEnd) {
+    order.status = 'expired';
+  }
+
+  await order.save();
+};
+
+/**
+ * Adds a new leave to an order.
+ */
 const addLeave = async (req, res) => {
   const { orderId } = req.params;
   const { leaveStart, leaveEnd } = req.body;
-  console.log('leavestart:',leaveStart)
+
+  console.log('Leave Start:', leaveStart);
+  console.log('Leave End:', leaveEnd);
 
   try {
     const order = await Order.findById(orderId);
@@ -538,49 +822,194 @@ const addLeave = async (req, res) => {
 
     const leaveStartDate = stripTime(new Date(leaveStart));
     const leaveEndDate = stripTime(new Date(leaveEnd));
+    const orderStartDate = stripTime(new Date(order.orderStart));
     const orderEndDate = stripTime(new Date(order.orderEnd));
 
-    // Check if the leave end date is within the order end date
-    if (leaveEndDate > orderEndDate) {
-      return res.status(400).json({ message: 'Leave end date exceeds order end date' });
+    // Validate dates logically
+    if (leaveStartDate > leaveEndDate) {
+      return res.status(400).json({ message: 'Leave start date cannot be after the leave end date' });
     }
 
-    // Check for overlapping active leave
-    const activeLeaveIndex = order.leave.findIndex(leave => stripTime(new Date(leave.end)) >= stripTime(new Date()));
-
-    if (activeLeaveIndex !== -1) {
-      // Update the existing active leave dates
-      order.leave[activeLeaveIndex].start = leaveStartDate;
-      order.leave[activeLeaveIndex].end = leaveEndDate;
-      order.leave[activeLeaveIndex].numberOfLeaves = Math.ceil((leaveEndDate - leaveStartDate) / (1000 * 60 * 60 * 24)) + 1;
-    } else {
-      // Calculate the number of leave days
-      const differenceInTime = leaveEndDate - leaveStartDate;
-      const differenceInDays = Math.ceil(differenceInTime / (1000 * 60 * 60 * 24));
-      const numberOfLeaves = differenceInDays + 1;
-
-      // Add the leave to the order's leave array
-      order.leave.push({
-        start: leaveStartDate,
-        end: leaveEndDate,
-        numberOfLeaves,
-      });
+    // Ensure leave dates are within the order's date range
+    if (leaveStartDate < orderStartDate || leaveEndDate > orderEndDate) {
+      return res.status(400).json({ message: 'Leave dates must be within the order date range' });
     }
 
-    // Check if the present day falls within the leave period
-    const today = stripTime(new Date());
-    if (today >= leaveStartDate && today <= leaveEndDate) {
-      order.status = 'leave';
+    // Calculate the number of days for the new leave
+    const differenceInTime = leaveEndDate - leaveStartDate;
+    const differenceInDays = Math.ceil(differenceInTime / (1000 * 60 * 60 * 24));
+    const numberOfLeaves = differenceInDays + 1;
+
+    // Calculate the total number of leave days including existing and new leave
+    const totalLeaveDays = order.leave.reduce((acc, leave) => acc + leave.numberOfLeaves, 0) + numberOfLeaves;
+
+    // Ensure the total does not exceed 8 days
+    if (totalLeaveDays > 8) {
+      return res.status(400).json({ message: 'Total number of leave days cannot exceed 8 for this order' });
     }
 
-    await order.save();
+    // Check for overlapping leave entries
+    const overlappingLeave = order.leave.some(
+      (leave) =>
+        leaveStartDate <= stripTime(new Date(leave.end)) &&
+        leaveEndDate >= stripTime(new Date(leave.start))
+    );
 
-    return res.status(200).json({ message: 'Leave added/updated successfully' });
+    if (overlappingLeave) {
+      return res.status(400).json({ message: 'The new leave period overlaps with an existing leave' });
+    }
+
+    // Add the new leave to the order's leave array
+    order.leave.push({
+      start: leaveStartDate,
+      end: leaveEndDate,
+      numberOfLeaves,
+    });
+
+    // Update the order's status based on the new leave
+    await updateOrderStatus(order);
+
+    return res.status(200).json({ message: 'Leave added successfully' });
   } catch (error) {
-    console.error('Error adding/updating leave:', error);
+    console.error('Error adding leave:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
+
+/**
+ * Edits an existing leave in an order.
+ */
+const editLeave = async (req, res) => {
+  const { orderId, leaveId } = req.params;
+  const { leaveStart, leaveEnd } = req.body;
+
+  // Validate ObjectId formats
+  if (!mongoose.Types.ObjectId.isValid(orderId)) {
+    return res.status(400).json({ message: 'Invalid order ID' });
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(leaveId)) {
+    return res.status(400).json({ message: 'Invalid leave ID' });
+  }
+
+  try {
+    const order = await Order.findById(orderId);
+
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    // Check if leave exists
+    const leaveExists = order.leave.some(l => l._id.toString() === leaveId);
+    if (!leaveExists) {
+      return res.status(404).json({ message: 'Leave not found' });
+    }
+
+    const leaveStartDate = stripTime(new Date(leaveStart));
+    const leaveEndDate = stripTime(new Date(leaveEnd));
+    const orderStartDate = stripTime(new Date(order.orderStart));
+    const orderEndDate = stripTime(new Date(order.orderEnd));
+
+    // Validate dates logically
+    if (leaveStartDate > leaveEndDate) {
+      return res.status(400).json({ message: 'Leave start date cannot be after the leave end date' });
+    }
+
+    // Ensure leave dates are within the order's date range
+    if (leaveStartDate < orderStartDate || leaveEndDate > orderEndDate) {
+      return res.status(400).json({ message: 'Leave dates must be within the order date range' });
+    }
+
+    // Calculate number of leave days
+    const differenceInTime = leaveEndDate - leaveStartDate;
+    const differenceInDays = Math.ceil(differenceInTime / (1000 * 60 * 60 * 24));
+    const numberOfLeaves = differenceInDays + 1;
+
+    // Remove the existing leave using pull
+    order.leave.pull(leaveId);
+
+    // Calculate total leave days
+    const totalLeaveDays = order.leave.reduce((acc, l) => acc + l.numberOfLeaves, 0) + numberOfLeaves;
+
+    // Ensure the total does not exceed 8 days
+    if (totalLeaveDays > 8) {
+      return res.status(400).json({ message: 'Total number of leave days cannot exceed 8 for this order' });
+    }
+
+    // Check for overlapping leave entries
+    const overlappingLeave = order.leave.some((l) => {
+      const existingLeaveStart = stripTime(new Date(l.start));
+      const existingLeaveEnd = stripTime(new Date(l.end));
+      return leaveStartDate <= existingLeaveEnd && leaveEndDate >= existingLeaveStart;
+    });
+
+    if (overlappingLeave) {
+      return res.status(400).json({ message: 'The edited leave period overlaps with an existing leave' });
+    }
+         
+    // Re-add the leave with updated details
+    order.leave.push({
+      _id: leaveId, // Retain the original leave ID
+      start: leaveStartDate,
+      end: leaveEndDate,
+      numberOfLeaves,
+    });
+
+    // Update the order's status based on the edited leave
+    await updateOrderStatus(order);
+
+    return res.status(200).json({ message: 'Leave updated successfully' });
+  } catch (error) {
+    console.error('Error editing leave:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+/**
+ * Deletes an existing leave from an order.
+ */const deleteLeave = async (req, res) => {
+  const { orderId, leaveId } = req.params;
+
+  // Validate ObjectId formats
+  if (!mongoose.Types.ObjectId.isValid(orderId)) {
+    return res.status(400).json({ message: 'Invalid order ID' });
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(leaveId)) {
+    return res.status(400).json({ message: 'Invalid leave ID' });
+  }
+
+  try {
+    const order = await Order.findById(orderId);
+
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    // Check if leave exists
+    const leaveExists = order.leave.some(l => l._id.toString() === leaveId);
+    if (!leaveExists) {
+      return res.status(404).json({ message: 'Leave not found' });
+    }
+
+    // Remove the leave using pull and update the document
+    const updatedOrder = await Order.findByIdAndUpdate(
+      orderId,
+      { $pull: { leave: { _id: leaveId } } },
+      { new: true }
+    );
+
+    // Update the order's status based on the remaining leaves
+    await updateOrderStatus(updatedOrder);
+
+    return res.status(200).json({ message: 'Leave deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting leave:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+
 
 
 // add attandance
@@ -773,14 +1202,19 @@ cron.schedule('0 0 * * *', updateOrderStatuses);
 
 module.exports = {
   login, 
+  postUser,
   postOrder,
   getUsers,
   getDailyStatistics,
   editUser,
   deleteUser,
   trashUser,
-  addLeave,
   addAttendance,
   getAttendance,
-  location
+  location,
+  getUserById,
+  addLeave,
+  editLeave,
+  deleteLeave,
+  getPointsWithLeaveToday
 };
