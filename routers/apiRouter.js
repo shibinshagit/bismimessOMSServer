@@ -32,6 +32,9 @@ router.get('/pointsWithExpiredUsers', controllers.getPointsWithExpiredUsers);
 // Edit an existing leave
 router.put('/editLeave/:orderId/:leaveId', controllers.editLeave);
 
+router.get('/points/:pointId/users', controllers.getUsersByPointId);
+router.put('/users/:userId/attendance', controllers.updateUserAttendance);
+
 // Delete a leave
 router.delete('/deleteLeave/:orderId/:leaveId', controllers.deleteLeave);
 router.get('/pointsWithLeaveToday', controllers.getPointsWithLeaveToday);

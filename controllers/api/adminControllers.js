@@ -22,7 +22,7 @@ const login = async (req, res) => {
 
     if (!admin) {
       return res.status(400).json({ error: "Unauthorized" });
-    }
+    }       
 
     // Compare the provided password with the stored hash
     const isMatch = await bcrypt.compare(password, admin.password);
@@ -80,8 +80,10 @@ const postUser = async (req, res) => {
 
 // Helper function to strip time from Date
 const stripTime = (date) => {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const utcDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  return utcDate;
 };
+
    
 // POST /api/orders
 const postOrder = async (req, res) => {
@@ -864,10 +866,14 @@ const getPointsWithExpiredUsers = async (req, res) => {
     res.status(500).json({ message: "Failed to fetch points with expired users" });
   }
 };
+
+/**
+ * Fetches all points with comprehensive statistics.
+ */
 const getPointsWithStatistics = async (req, res) => {
   try {
     const today = stripTime(new Date());
-
+console.log(today)
     const pointsWithStats = await Point.aggregate([
       // 1. Join with Users
       {
@@ -1035,11 +1041,121 @@ const getPointsWithStatistics = async (req, res) => {
         },
       },
     ]);
-
+console.log(pointsWithStats)
     res.status(200).json(pointsWithStats);
   } catch (error) {
     console.error("Error fetching points with statistics:", error);
     res.status(500).json({ message: "Failed to fetch points with statistics" });
+  }
+};
+
+/**
+ * Fetches all users associated with a specific point ID.
+ */
+const getUsersByPointId = async (req, res) => {
+  try {
+    const { pointId } = req.params;
+
+    // Validate Point ID
+    if (!mongoose.Types.ObjectId.isValid(pointId)) {
+      return res.status(400).json({ message: 'Invalid Point ID' });
+    }
+
+    const users = await User.find({ point: pointId, isDeleted: false }).populate('orders');
+
+    res.status(200).json(users);
+  } catch (error) {
+    console.error('Error fetching users by point ID:', error);
+    res.status(500).json({ message: 'Failed to fetch users' });
+  }
+};
+
+/**
+ * Updates a user's attendance status for a specific meal on a given date.
+ */
+const updateUserAttendance = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { date, meal } = req.body;
+
+    // Validate User ID
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: 'Invalid User ID' });
+    }
+
+    // Validate Meal
+    const validMeals = ['B', 'L', 'D'];
+    if (!validMeals.includes(meal)) {
+      return res.status(400).json({ message: 'Invalid meal type' });
+    }
+
+    // Validate Date
+    const attendanceDate = new Date(date);
+    if (isNaN(attendanceDate)) {
+      return res.status(400).json({ message: 'Invalid date format' });
+    }
+
+    // Find the User
+    const user = await User.findById(userId).populate('orders');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Find the latest order
+    const latestOrder = user.orders.sort((a, b) => b.orderStart - a.orderStart)[0];
+    if (!latestOrder) {
+      return res.status(404).json({ message: 'No orders found for user' });
+    }
+
+    // Ensure the latest order is active on the given date
+    const orderStart = stripTime(new Date(latestOrder.orderStart));
+    const orderEnd = stripTime(new Date(latestOrder.orderEnd));
+    const targetDate = stripTime(attendanceDate);
+
+    if (targetDate < orderStart || targetDate > orderEnd) {
+      return res.status(400).json({ message: 'Date is outside the order period' });
+    }
+
+    // Check if the date is a leave day
+    const isLeaveDay = latestOrder.leave.some(leave => {
+      const leaveStart = stripTime(new Date(leave.start));
+      const leaveEnd = stripTime(new Date(leave.end));
+      return targetDate >= leaveStart && targetDate <= leaveEnd;
+    });
+
+    if (isLeaveDay) {
+      return res.status(400).json({ message: 'Cannot mark attendance on leave days' });
+    }
+
+    // Initialize attendance if not present for the date
+    if (!latestOrder.attendances) {
+      latestOrder.attendances = [];
+    }
+
+    let attendanceRecord = latestOrder.attendances.find(att => stripTime(att.date) === targetDate);
+
+    if (!attendanceRecord) {
+      // Create a new attendance record for the date
+      attendanceRecord = { date: targetDate, B: 'packed', L: 'packed', D: 'packed' };
+      latestOrder.attendances.push(attendanceRecord);
+    }
+
+    // Validate current status before updating
+    const currentStatus = attendanceRecord[meal];
+    if (currentStatus === 'delivered') {
+      return res.status(400).json({ message: `Meal ${meal} is already marked as delivered` });
+    }
+
+    // Update the specific meal status to 'delivered'
+    attendanceRecord[meal] = 'delivered';
+
+    // Save the updated order
+    await latestOrder.save();
+
+    res.status(200).json({ message: 'Attendance updated successfully', attendance: attendanceRecord });
+  } catch (error) {
+    console.error('Error updating user attendance:', error);
+    res.status(500).json({ message: 'Failed to update attendance' });
   }
 };
 // trashUser==================================================================================================================================================
@@ -1404,42 +1520,6 @@ const location = async (req, res) => {
 
 // ====================== Node cron=========================================================================================================================
 
-async function updateOrderStatuses() {
-  try {
-    const orders = await Order.find({}); // Fetch all orders
-
-    orders.forEach(order => {
-      const currentDate = stripTime(new Date());
-      const orderStart = stripTime(new Date(order.orderStart));
-      const orderEnd = stripTime(new Date(order.orderEnd));
-
-      // Check if the current date is a leave day
-      const isLeaveDay = order.leave.some(leave => {
-        const leaveStart = stripTime(new Date(leave.start));
-        const leaveEnd = stripTime(new Date(leave.end));
-        return currentDate >= leaveStart && currentDate <= leaveEnd;
-      });
-
-      if (isLeaveDay) {
-        order.status = 'leave';
-      } else if (currentDate < orderStart) {
-        order.status = 'soon';
-      } else if (currentDate >= orderStart && currentDate <= orderEnd) {
-        order.status = 'active';
-      } else if (currentDate > orderEnd) {
-        order.status = 'expired';
-      }
-
-      // Save the updated order
-      order.save();
-    });
-
-    console.log('Order statuses updated successfully');
-  } catch (error) {
-    console.error('Error updating order statuses:', error);
-  }
-}
-
 
 const cleanupJunkOrders = async () => {
   try {
@@ -1487,8 +1567,131 @@ const update = async () => {
 // cron.schedule('* * * * * *', update);
 
 
-// Schedule the function to run daily at midnight
-cron.schedule('0 0 * * *', updateOrderStatuses);
+async function updateOrderStatuses() {
+  try {
+    const orders = await Order.find({}); // Fetch all orders
+
+    const today = stripTime(new Date());
+
+    for (let order of orders) {
+      const orderStart = stripTime(new Date(order.orderStart));
+      const orderEnd = stripTime(new Date(order.orderEnd));
+
+      // Check if the current date is a leave day
+      const isLeaveDay = order.leave.some((leave) => {
+        const leaveStart = stripTime(new Date(leave.start));
+        const leaveEnd = stripTime(new Date(leave.end));
+        return today >= leaveStart && today <= leaveEnd;
+      });
+
+      if (isLeaveDay) {
+        order.status = 'leave';
+      } else if (today < orderStart) {
+        order.status = 'soon';
+      } else if (today >= orderStart && today <= orderEnd) {
+        order.status = 'active';
+      } else if (today > orderEnd) {
+        order.status = 'expired';
+      }
+
+      // Save the updated order
+      await order.save();
+    }
+
+    console.log('Order statuses updated successfully');
+  } catch (error) {
+    console.error('Error updating order statuses:', error);
+  }
+}
+
+/**
+ * Creates daily attendance records for active orders.
+ */
+async function createDailyAttendances() {
+  try {
+    const pointId = '66c26682b43a45070b24e882'; // Specific Point ID
+    const today = stripTime(new Date());
+
+    // Fetch only active orders associated with the specified point
+    const activeOrders = await Order.find({
+      point: pointId,
+      status: 'active',
+      orderStart: { $lte: today },
+      orderEnd: { $gte: today },
+    }).populate('userId'); // Assuming 'userId' references the User model
+
+    for (let order of activeOrders) {
+      const user = order.userId;
+
+      if (!user) {
+        console.log(`No user associated with order: ${order._id}`);
+        continue;
+      }
+
+      // Check if today is a leave day for the user
+      const isLeaveDay = order.leave.some((leave) => {
+        const leaveStart = stripTime(new Date(leave.start));
+        const leaveEnd = stripTime(new Date(leave.end));
+        return today >= leaveStart && today <= leaveEnd;
+      });
+
+      // Initialize attendance if not present
+      if (!order.attendances) {
+        order.attendances = [];
+      }
+
+      let attendanceRecord = order.attendances.find(
+        (att) => stripTime(att.date) === today
+      );
+
+      if (isLeaveDay) {
+        if (!attendanceRecord) {
+          // Create a new attendance record for leave
+          attendanceRecord = { date: today, B: 'leave', L: 'leave', D: 'leave' };
+          order.attendances.push(attendanceRecord);
+          console.log(
+            `Marked leave for user: ${user._id} on ${today.toDateString()}`
+          );
+        } else {
+          // Update existing attendance record to 'leave'
+          attendanceRecord.B = 'leave';
+          attendanceRecord.L = 'leave';
+          attendanceRecord.D = 'leave';
+          console.log(
+            `Updated attendance to leave for user: ${user._id} on ${today.toDateString()}`
+          );
+        }
+      } else {
+        if (!attendanceRecord) {
+          // Create a new attendance record with default 'packed' status
+          attendanceRecord = { date: today, B: 'packed', L: 'packed', D: 'packed' };
+          order.attendances.push(attendanceRecord);
+          console.log(
+            `Created attendance for user: ${user._id} on ${today.toDateString()}`
+          );
+        } else {
+          console.log(
+            `Attendance already exists for user: ${user._id} on ${today.toDateString()}`
+          );
+        }
+      }
+
+      // Save the updated order
+      await order.save();
+    }
+
+    console.log('Daily attendance records processed successfully');
+  } catch (error) {
+    console.error('Error creating daily attendance records:', error);
+  }
+}
+
+// Schedule the functions to run daily at midnight
+cron.schedule('0 0 * * *', () => {
+  console.log('Running daily cron jobs at midnight');
+  updateOrderStatuses();
+  createDailyAttendances();
+});
 
 module.exports = {
   login, 
@@ -1508,5 +1711,7 @@ module.exports = {
   deleteLeave,
   getPointsWithLeaveToday,
   getPointsWithExpiredUsers,
-  getPointsWithStatistics
+  getPointsWithStatistics,
+  getUsersByPointId,
+  updateUserAttendance,
 };
