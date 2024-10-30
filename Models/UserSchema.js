@@ -10,11 +10,6 @@ const userSchema = new Schema({
     latitude: { type: Number },
     longitude: { type: Number }
   },
-  status: { 
-    type: String, 
-    enum: ['Packed', 'Out', 'Delivered'], 
-    default: 'Active' 
-  },
   startDate: { type: Date, default: Date.now },
   isDeleted: { type: Boolean, default: false },
   orders: [{ type: Schema.Types.ObjectId, ref: 'Order' }],
