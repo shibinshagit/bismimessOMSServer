@@ -24,8 +24,10 @@ router.get('/statistics',controllers.getDailyStatistics );
 router.put('/updateUser/:id',controllers.editUser);  
 router.delete('/deleteUser/:id', controllers.deleteUser);
 router.put('/trashUser/:id', controllers.trashUser);
+router.get('/pointsWithStatistics', controllers.getPointsWithStatistics);
 // Add a new leave
 router.post('/addLeave/:orderId', controllers.addLeave);
+router.get('/pointsWithExpiredUsers', controllers.getPointsWithExpiredUsers);
 
 // Edit an existing leave
 router.put('/editLeave/:orderId/:leaveId', controllers.editLeave);

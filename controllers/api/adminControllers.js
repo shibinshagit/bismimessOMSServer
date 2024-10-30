@@ -751,7 +751,297 @@ const deleteUser = async (req, res) => {
   }
 };
 
+const getPointsWithExpiredUsers = async (req, res) => {
+  try {
+    const today = stripTime(new Date());
 
+    const pointsWithExpiredUsers = await Point.aggregate([
+      {
+        $lookup: {
+          from: 'users', // Ensure the collection name is lowercase plural
+          localField: '_id',
+          foreignField: 'point',
+          as: 'users',
+        },
+      },
+      {
+        $lookup: {
+          from: 'orders', // Ensure the collection name is lowercase plural
+          localField: 'users.orders', // 'users' has an array 'orders'
+          foreignField: '_id',
+          as: 'orders',
+        },
+      },
+      {
+        $addFields: {
+          users: {
+            $map: {
+              input: '$users',
+              as: 'user',
+              in: {
+                $mergeObjects: [
+                  '$$user',
+                  {
+                    latestOrder: {
+                      $arrayElemAt: [
+                        {
+                          $filter: {
+                            input: '$orders',
+                            as: 'order',
+                            cond: { $eq: ['$$order.userId', '$$user._id'] },
+                          },
+                        },
+                        -1, // Get the latest order
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+      {
+        $project: {
+          orders: 0, // Exclude orders as they are now embedded in users.latestOrder
+        },
+      },
+      {
+        $addFields: {
+          users: {
+            $map: {
+              input: '$users',
+              as: 'user',
+              in: {
+                _id: '$$user._id',
+                name: '$$user.name',
+                phone: '$$user.phone',
+                email: '$$user.email',
+                // Include other user fields as needed
+                latestOrder: '$$user.latestOrder',
+              },
+            },
+          },
+        },
+      },
+      {
+        $addFields: {
+          usersExpired: {
+            $filter: {
+              input: '$users',
+              as: 'user',
+              cond: {
+                $and: [
+                  { $ifNull: ['$$user.latestOrder', false] }, // Ensure latestOrder exists
+                  { $eq: ['$$user.latestOrder.status', 'expired'] }, // Check if latest order is expired
+                ],
+              },
+            },
+          },
+        },
+      },
+      {
+        $project: {
+          place: 1, // 'place' field from Point model
+          totalUsers: { $size: '$users' },
+          totalExpiredUsers: { $size: '$usersExpired' },
+          usersExpired: 1,
+        },
+      },
+      {
+        $addFields: {
+          hasExpiredUsers: { $gt: ['$totalExpiredUsers', 0] },
+        },
+      },
+      {
+        $sort: { hasExpiredUsers: -1, place: 1 }, // Sort by hasExpiredUsers descending, then by place ascending
+      },
+    ]);
+
+    res.status(200).json(pointsWithExpiredUsers);
+  } catch (error) {
+    console.error("Error fetching points with expired users:", error);
+    res.status(500).json({ message: "Failed to fetch points with expired users" });
+  }
+};
+const getPointsWithStatistics = async (req, res) => {
+  try {
+    const today = stripTime(new Date());
+
+    const pointsWithStats = await Point.aggregate([
+      // 1. Join with Users
+      {
+        $lookup: {
+          from: 'users', // Collection name should be lowercase plural
+          localField: '_id',
+          foreignField: 'point',
+          as: 'users',
+        },
+      },
+      // 2. Join with Orders
+      {
+        $lookup: {
+          from: 'orders', // Collection name should be lowercase plural
+          localField: 'users.orders',
+          foreignField: '_id',
+          as: 'orders',
+        },
+      },
+      // 3. Embed latest order for each user
+      {
+        $addFields: {
+          users: {
+            $map: {
+              input: '$users',
+              as: 'user',
+              in: {
+                $mergeObjects: [
+                  '$$user',
+                  {
+                    latestOrder: {
+                      $arrayElemAt: [
+                        {
+                          $filter: {
+                            input: '$orders',
+                            as: 'order',
+                            cond: { $eq: ['$$order.userId', '$$user._id'] },
+                          },
+                        },
+                        -1, // Get the latest order
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+      // 4. Simplify user objects
+      {
+        $addFields: {
+          users: {
+            $map: {
+              input: '$users',
+              as: 'user',
+              in: {
+                _id: '$$user._id',
+                name: '$$user.name',
+                phone: '$$user.phone',
+                email: '$$user.email',
+                latestOrder: '$$user.latestOrder',
+              },
+            },
+          },
+        },
+      },
+      // 5. Calculate statistics
+      {
+        $addFields: {
+          totalCustomers: { $size: '$users' },
+          todaysActiveCustomers: {
+            $size: {
+              $filter: {
+                input: '$users',
+                as: 'user',
+                cond: {
+                  $and: [
+                    { $ne: ['$$user.latestOrder', null] }, // Ensure latestOrder exists
+                    { $eq: ['$$user.latestOrder.status', 'active'] }, // Check if latest order is active
+                    { $lte: ['$$user.latestOrder.orderStart', today] }, // orderStart <= today
+                    { $gte: ['$$user.latestOrder.orderEnd', today] }, // orderEnd >= today
+                  ],
+                },
+              },
+            },
+          },
+          todaysLeave: {
+            $size: {
+              $filter: {
+                input: '$users',
+                as: 'user',
+                cond: {
+                  $and: [
+                    { $ne: ['$$user.latestOrder', null] }, // Ensure latestOrder exists
+                    { $eq: ['$$user.latestOrder.status', 'leave'] }, // Check if latest order is leave
+                    {
+                      $gt: [
+                        {
+                          $size: {
+                            $filter: {
+                              input: { $ifNull: ['$$user.latestOrder.leave', []] }, // Ensure 'leave' is an array
+                              as: 'leave',
+                              cond: {
+                                $and: [
+                                  { $lte: ['$$leave.start', today] },
+                                  { $gte: ['$$leave.end', today] },
+                                ],
+                              },
+                            },
+                          },
+                        },
+                        0,
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
+          },
+          totalBreakfast: {
+            $size: {
+              $filter: {
+                input: '$orders',
+                as: 'order',
+                cond: { $in: ['B', '$$order.plan'] }, // B: Breakfast
+              },
+            },
+          },
+          totalLunch: {
+            $size: {
+              $filter: {
+                input: '$orders',
+                as: 'order',
+                cond: { $in: ['L', '$$order.plan'] }, // L: Lunch
+              },
+            },
+          },
+          totalDinner: {
+            $size: {
+              $filter: {
+                input: '$orders',
+                as: 'order',
+                cond: { $in: ['D', '$$order.plan'] }, // D: Dinner
+              },
+            },
+          },
+        },
+      },
+      // 6. Sort points with more total customers first
+      {
+        $sort: { totalCustomers: -1, place: 1 },
+      },
+      // 7. Project required fields
+      {
+        $project: {
+          place: 1,
+          mode: 1,
+          totalCustomers: 1,
+          todaysActiveCustomers: 1,
+          todaysLeave: 1,
+          totalBreakfast: 1,
+          totalLunch: 1,
+          totalDinner: 1,
+        },
+      },
+    ]);
+
+    res.status(200).json(pointsWithStats);
+  } catch (error) {
+    console.error("Error fetching points with statistics:", error);
+    res.status(500).json({ message: "Failed to fetch points with statistics" });
+  }
+};
 // trashUser==================================================================================================================================================
 const trashUser = async (req, res) => {
   try {
@@ -1216,5 +1506,7 @@ module.exports = {
   addLeave,
   editLeave,
   deleteLeave,
-  getPointsWithLeaveToday
+  getPointsWithLeaveToday,
+  getPointsWithExpiredUsers,
+  getPointsWithStatistics
 };
