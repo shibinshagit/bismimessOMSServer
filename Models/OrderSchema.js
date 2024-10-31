@@ -1,6 +1,6 @@
 // models/Order.js
-
 const mongoose = require('mongoose');
+const Attendance = require('../Models/attendanceSchema');
 const Schema = mongoose.Schema;
 
 /**
@@ -10,15 +10,9 @@ const Schema = mongoose.Schema;
  */
 const stripTime = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
-const attendanceSchema = new Schema({
-  date: { type: Date, required: true },
-  B: { type: String, enum: ['packed', 'out for delivery', 'delivered', 'leave'], default: 'packed', required: true },
-  L: { type: String, enum: ['packed', 'out for delivery', 'delivered', 'leave'], default: 'packed', required: true },
-  D: { type: String, enum: ['packed', 'out for delivery', 'delivered', 'leave'], default: 'packed', required: true },
-});
-
 const orderSchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  point: { type: Schema.Types.ObjectId, ref: 'Point', required: true }, // Assuming Point reference
   plan: {
     type: [String],
     enum: ['B', 'L', 'D'],
@@ -44,7 +38,7 @@ const orderSchema = new Schema({
     enum: ['Cash', 'Bank', 'Online'],
   },
   paymentId: { type: String },
-  attendances: [attendanceSchema],
+  attendances: [Attendance.schema],  // Use Attendance schema directly
 }, { timestamps: true });
 
 // Pre-save middleware to initialize attendance records

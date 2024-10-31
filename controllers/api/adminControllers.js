@@ -86,103 +86,175 @@ const stripTime = (date) => {
 
    
 // POST /api/orders
+// const postOrder = async (req, res) => {
+//   try {
+//     const {
+//       userId,                                      
+//       plan,
+//       paymentStatus,
+//       amount,
+//       paymentMethod,
+//       paymentId,
+//       orderStart,
+//       orderEnd,
+//     } = req.body;
+
+//     console.log('Order Data:', req.body);
+
+//     // Validate required fields
+//     if (!userId) {
+//       return res.status(400).json({ message: "User ID is required" });
+//     }
+
+//     if (!plan || plan.length === 0) {
+//       return res.status(400).json({ message: "Plan is required" });
+//     }
+
+//     if (!paymentStatus) {
+//       return res.status(400).json({ message: "Payment status is required" });
+//     }
+
+//     if (!orderStart || !orderEnd) {
+//       return res.status(400).json({ message: "Order start and end dates are required" });
+//     }
+
+//     // Check if user exists
+//     const user = await User.findById(userId);
+//     if (!user) {
+//       return res.status(404).json({ message: "User not found" });
+//     }
+
+//     // Determine order status
+//     let orderStatus = "Expiring Soon";
+
+//     const currentDate = stripTime(new Date());
+//     const orderStartDate = stripTime(new Date(orderStart));
+//     const orderEndDate = stripTime(new Date(orderEnd));
+
+//     if (!isNaN(orderStartDate) && !isNaN(orderEndDate)) {
+//       if (orderStartDate <= currentDate && currentDate <= orderEndDate) {
+//         orderStatus = "Active";
+//       } else if (currentDate < orderStartDate) {
+//         orderStatus = "Expiring Soon";
+//       } else {
+//         orderStatus = "Expired";
+//       }
+//     } else {
+//       console.error("Invalid date(s) provided");
+//       return res.status(400).json({ message: "Invalid date(s) provided" });
+//     }
+
+//     // Build order data
+//     const orderData = {
+//       userId,
+//       plan,
+//       orderStart,
+//       orderEnd,
+//       leave: [],
+//       status: orderStatus,
+//       paymentStatus,
+//     };
+
+//     // Handle payment details if paymentStatus is 'Completed'
+//     if (paymentStatus === 'Completed') {
+//       if (!amount || !paymentMethod || !paymentId) {
+//         return res.status(400).json({ message: "Payment details are required when payment is completed" });
+//       }
+//       orderData.amount = amount;
+//       orderData.paymentMethod = paymentMethod;
+//       orderData.paymentId = paymentId;
+//     }
+
+//     // Create new order
+//     const newOrder = new Order(orderData);
+
+//     await newOrder.save();
+
+//     // Add order ID to user's orders array
+//     user.orders.push(newOrder._id);
+//     await user.save();
+
+//     res.status(201).json({
+//       message: "Order added successfully",
+//       orderId: newOrder._id,
+//     });
+//   } catch (error) {
+//     console.error("Error adding order:", error);
+//     res.status(500).json({ message: "Error adding order" });
+//   }
+// };
 const postOrder = async (req, res) => {
   try {
-    const {
-      userId,                                      
-      plan,
+    // Extract data from request body
+
+    const { name, phone, point, plan, paymentStatus, startDate, endDate } = req.body;
+    console.log('jhjdfjhjsdh',req.body)
+    console.log('userData:',req.body)
+
+    const existingUser = await User.findOne({ phone });
+    if (existingUser) {
+      return res.status(400).json({ message: "Phone number already exists" });
+    }
+
+    const newUser = new User({
+      name,
+      phone,
+      point,
       paymentStatus,
-      amount,
-      paymentMethod,
-      paymentId,
-      orderStart,
-      orderEnd,
-    } = req.body;
+    });
 
-    console.log('Order Data:', req.body);
+    if (paymentStatus) {   
+      if (plan.length === 0) {
+        return res.status(204).json({ message: "Fill all plan data" });
+      }
 
-    // Validate required fields
-    if (!userId) {
-      return res.status(400).json({ message: "User ID is required" });
-    }
+      let orderStatus = "soon";
 
-    if (!plan || plan.length === 0) {
-      return res.status(400).json({ message: "Plan is required" });
-    }
 
-    if (!paymentStatus) {
-      return res.status(400).json({ message: "Payment status is required" });
-    }
+      const currentDate = stripTime(new Date());
+      const orderStartDate = stripTime(new Date(startDate));
+      const orderEndDate = stripTime(new Date(endDate));
 
-    if (!orderStart || !orderEnd) {
-      return res.status(400).json({ message: "Order start and end dates are required" });
-    }
-
-    // Check if user exists
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    // Determine order status
-    let orderStatus = "Expiring Soon";
-
-    const currentDate = stripTime(new Date());
-    const orderStartDate = stripTime(new Date(orderStart));
-    const orderEndDate = stripTime(new Date(orderEnd));
-
-    if (!isNaN(orderStartDate) && !isNaN(orderEndDate)) {
-      if (orderStartDate <= currentDate && currentDate <= orderEndDate) {
-        orderStatus = "Active";
-      } else if (currentDate < orderStartDate) {
-        orderStatus = "Expiring Soon";
+      if (!isNaN(orderStartDate) && !isNaN(orderEndDate)) {
+        if (orderStartDate <= currentDate && currentDate <= orderEndDate) {
+          orderStatus = "active";
+        }
       } else {
-        orderStatus = "Expired";
+        console.error("Invalid date(s) provided");
+        return res.status(400).json({ message: "Invalid date(s) provided" });
       }
-    } else {
-      console.error("Invalid date(s) provided");
-      return res.status(400).json({ message: "Invalid date(s) provided" });
+
+      console.log(orderStatus);
+
+      const newOrder = new Order({
+        userId: newUser._id,
+        plan,
+        orderStart: startDate,
+        orderEnd: endDate,
+        leave: [],
+        status: orderStatus,
+      });
+
+      await newOrder.save();
+      newUser.orders.push(newOrder._id);
     }
 
-    // Build order data
-    const orderData = {
-      userId,
-      plan,
-      orderStart,
-      orderEnd,
-      leave: [],
-      status: orderStatus,
-      paymentStatus,
-    };
+    await newUser.save();
 
-    // Handle payment details if paymentStatus is 'Completed'
-    if (paymentStatus === 'Completed') {
-      if (!amount || !paymentMethod || !paymentId) {
-        return res.status(400).json({ message: "Payment details are required when payment is completed" });
-      }
-      orderData.amount = amount;
-      orderData.paymentMethod = paymentMethod;
-      orderData.paymentId = paymentId;
-    }
+    // Emit socket event with new user data
+    // req.io.sockets.emit('dataUpdated', { user: newUser });
 
-    // Create new order
-    const newOrder = new Order(orderData);
-
-    await newOrder.save();
-
-    // Add order ID to user's orders array
-    user.orders.push(newOrder._id);
-    await user.save();
-
-    res.status(201).json({
-      message: "Order added successfully",
-      orderId: newOrder._id,
+    res.status(200).json({
+      message: "User and order added successfully",
+      userId: newUser._id,
     });
   } catch (error) {
-    console.error("Error adding order:", error);
-    res.status(500).json({ message: "Error adding order" });
+    console.error("Error adding user and order:", error);
+    res.status(500).json({ message: "Error adding user and order" });
   }
 };
+
+
 // getUsers==============================================================================================================
 
 // const getUsers = async (req, res) => {
@@ -866,14 +938,10 @@ const getPointsWithExpiredUsers = async (req, res) => {
     res.status(500).json({ message: "Failed to fetch points with expired users" });
   }
 };
-
-/**
- * Fetches all points with comprehensive statistics.
- */
 const getPointsWithStatistics = async (req, res) => {
   try {
     const today = stripTime(new Date());
-console.log(today)
+
     const pointsWithStats = await Point.aggregate([
       // 1. Join with Users
       {
@@ -1041,11 +1109,11 @@ console.log(today)
         },
       },
     ]);
-console.log(pointsWithStats)
+
     res.status(200).json(pointsWithStats);
   } catch (error) {
-    console.error("Error fetching points with statistics:", error);
-    res.status(500).json({ message: "Failed to fetch points with statistics" });
+    // logger.error('Error fetching points with statistics: %o', error);
+    res.status(500).json({ message: 'Failed to fetch points with statistics' });
   }
 };
 
@@ -1065,44 +1133,49 @@ const getUsersByPointId = async (req, res) => {
 
     res.status(200).json(users);
   } catch (error) {
-    console.error('Error fetching users by point ID:', error);
+    // logger.error('Error fetching users by point ID: %o', error); 
     res.status(500).json({ message: 'Failed to fetch users' });
   }
 };
 
 /**
  * Updates a user's attendance status for a specific meal on a given date.
+ * Expected payload:
+ * {
+ *   "date": "2024-10-31", // YYYY-MM-DD
+ *   "meal": "B" // 'B' for Breakfast, 'L' for Lunch, 'D' for Dinner
+ * }
  */
 const updateUserAttendance = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { date, meal } = req.body;
+    const {  meal } = req.body;
+    const date = '2024-10-31'
+console.log(userId,req.body)
+    // Validate input
+    console.log('here')
+    const { error } = Attendance.validate(req.body);
 
+    if (error) {
+      console.log('here1')
+      return res.status(400).json({ message: error.details[0].message });
+    }
+    console.log('here2')
     // Validate User ID
     if (!mongoose.Types.ObjectId.isValid(userId)) {
+      console.log('here4')
       return res.status(400).json({ message: 'Invalid User ID' });
     }
-
-    // Validate Meal
-    const validMeals = ['B', 'L', 'D'];
-    if (!validMeals.includes(meal)) {
-      return res.status(400).json({ message: 'Invalid meal type' });
-    }
-
-    // Validate Date
-    const attendanceDate = new Date(date);
-    if (isNaN(attendanceDate)) {
-      return res.status(400).json({ message: 'Invalid date format' });
-    }
-
+    console.log('here5')
     // Find the User
     const user = await User.findById(userId).populate('orders');
     if (!user) {
+      console.log('here6')
       return res.status(404).json({ message: 'User not found' });
     }
-
+    console.log('here8')
     // Find the latest order
-    const latestOrder = user.orders.sort((a, b) => b.orderStart - a.orderStart)[0];
+    const latestOrder = user.orders.sort((a, b) => new Date(b.orderStart) - new Date(a.orderStart))[0];
     if (!latestOrder) {
       return res.status(404).json({ message: 'No orders found for user' });
     }
@@ -1110,14 +1183,14 @@ const updateUserAttendance = async (req, res) => {
     // Ensure the latest order is active on the given date
     const orderStart = stripTime(new Date(latestOrder.orderStart));
     const orderEnd = stripTime(new Date(latestOrder.orderEnd));
-    const targetDate = stripTime(attendanceDate);
+    const targetDate = stripTime(new Date(date));
 
     if (targetDate < orderStart || targetDate > orderEnd) {
       return res.status(400).json({ message: 'Date is outside the order period' });
     }
 
     // Check if the date is a leave day
-    const isLeaveDay = latestOrder.leave.some(leave => {
+    const isLeaveDay = latestOrder.leave.some((leave) => {
       const leaveStart = stripTime(new Date(leave.start));
       const leaveEnd = stripTime(new Date(leave.end));
       return targetDate >= leaveStart && targetDate <= leaveEnd;
@@ -1132,12 +1205,13 @@ const updateUserAttendance = async (req, res) => {
       latestOrder.attendances = [];
     }
 
-    let attendanceRecord = latestOrder.attendances.find(att => stripTime(att.date) === targetDate);
+    // Find the attendance record for the selected date
+    let attendanceRecord = latestOrder.attendances.find(
+      (att) => stripTime(att.date).getTime() === targetDate.getTime()
+    );
 
     if (!attendanceRecord) {
-      // Create a new attendance record for the date
-      attendanceRecord = { date: targetDate, B: 'packed', L: 'packed', D: 'packed' };
-      latestOrder.attendances.push(attendanceRecord);
+      return res.status(400).json({ message: 'Attendance record for the selected date does not exist. Please wait for the cron job to create it.' });
     }
 
     // Validate current status before updating
@@ -1152,9 +1226,12 @@ const updateUserAttendance = async (req, res) => {
     // Save the updated order
     await latestOrder.save();
 
-    res.status(200).json({ message: 'Attendance updated successfully', attendance: attendanceRecord });
+    res.status(200).json({
+      message: 'Attendance updated successfully',
+      attendance: attendanceRecord,
+    });
   } catch (error) {
-    console.error('Error updating user attendance:', error);
+    // logger.error('Error updating user attendance: %o', error);
     res.status(500).json({ message: 'Failed to update attendance' });
   }
 };
@@ -1640,8 +1717,9 @@ async function createDailyAttendances() {
         order.attendances = [];
       }
 
+      // Find if an attendance record for today already exists
       let attendanceRecord = order.attendances.find(
-        (att) => stripTime(att.date) === today
+        (att) => stripTime(att.date).getTime() === today.getTime()
       );
 
       if (isLeaveDay) {
@@ -1653,13 +1731,19 @@ async function createDailyAttendances() {
             `Marked leave for user: ${user._id} on ${today.toDateString()}`
           );
         } else {
-          // Update existing attendance record to 'leave'
-          attendanceRecord.B = 'leave';
-          attendanceRecord.L = 'leave';
-          attendanceRecord.D = 'leave';
-          console.log(
-            `Updated attendance to leave for user: ${user._id} on ${today.toDateString()}`
-          );
+          // Update existing attendance record to 'leave' if not already set
+          if (
+            attendanceRecord.B !== 'leave' ||
+            attendanceRecord.L !== 'leave' ||
+            attendanceRecord.D !== 'leave'
+          ) {
+            attendanceRecord.B = 'leave';
+            attendanceRecord.L = 'leave';
+            attendanceRecord.D = 'leave';
+            console.log(
+              `Updated attendance to leave for user: ${user._id} on ${today.toDateString()}`
+            );
+          }
         }
       } else {
         if (!attendanceRecord) {
