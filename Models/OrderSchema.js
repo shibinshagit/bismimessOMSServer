@@ -12,7 +12,6 @@ const stripTime = (date) => new Date(date.getFullYear(), date.getMonth(), date.g
 
 const orderSchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-  point: { type: Schema.Types.ObjectId, ref: 'Point', required: true }, // Assuming Point reference
   plan: {
     type: [String],
     enum: ['B', 'L', 'D'],

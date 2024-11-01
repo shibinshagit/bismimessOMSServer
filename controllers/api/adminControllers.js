@@ -83,7 +83,7 @@ const stripTime = (date) => {
   const utcDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   return utcDate;
 };
-
+      
    
 // POST /api/orders
 // const postOrder = async (req, res) => {
@@ -229,6 +229,7 @@ const postOrder = async (req, res) => {
       const newOrder = new Order({
         userId: newUser._id,
         plan,
+        point,
         orderStart: startDate,
         orderEnd: endDate,
         leave: [],
@@ -1641,7 +1642,7 @@ const update = async () => {
 };
 
 // Schedule the function to run every second (adjust for your needs)
-// cron.schedule('* * * * * *', update);
+// cron.schedule('* * * * * *', ()=> {});
 
 
 async function updateOrderStatuses() {
