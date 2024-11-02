@@ -13,6 +13,7 @@ const userSchema = new Schema({
   startDate: { type: Date, default: Date.now },
   isDeleted: { type: Boolean, default: false },
   orders: [{ type: Schema.Types.ObjectId, ref: 'Order' }],
+  images: [{ type: String }], // Array to store image URLs
 }, { timestamps: true });
 
 const User = mongoose.model('User', userSchema);

@@ -1,6 +1,6 @@
 // models/Order.js
+
 const mongoose = require('mongoose');
-const Attendance = require('../Models/attendanceSchema');
 const Schema = mongoose.Schema;
 
 /**
@@ -9,6 +9,13 @@ const Schema = mongoose.Schema;
  * @returns {Date}
  */
 const stripTime = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+const attendanceSchema = new Schema({
+  date: { type: Date, required: true },
+  B: { type: String, enum: ['packed', 'out for delivery', 'delivered', 'leave', 'NIL'], default: 'NIL', required: true },
+  L: { type: String, enum: ['packed', 'out for delivery', 'delivered', 'leave', 'NIL'], default: 'NIL', required: true },
+  D: { type: String, enum: ['packed', 'out for delivery', 'delivered', 'leave', 'NIL'], default: 'NIL', required: true },
+});
 
 const orderSchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
@@ -37,10 +44,11 @@ const orderSchema = new Schema({
     enum: ['Cash', 'Bank', 'Online'],
   },
   paymentId: { type: String },
-  attendances: [Attendance.schema],  // Use Attendance schema directly
+  isVeg: { type: Boolean, default: false },
+  attendances: [attendanceSchema],  
 }, { timestamps: true });
 
-// Pre-save middleware to initialize attendance records
+// Pre-save middleware to initialize attendance records based on the plan
 orderSchema.pre('save', function(next) {
   if (this.isNew) {
     const startDate = stripTime(this.orderStart);
@@ -49,12 +57,13 @@ orderSchema.pre('save', function(next) {
     const attendanceRecords = [];
 
     for (let d = new Date(startDate); d <= endDate; d = new Date(d.getTime() + dayMilliseconds)) {
-      attendanceRecords.push({
+      const attendance = {
         date: new Date(d),
-        B: 'packed',
-        L: 'packed',
-        D: 'packed',
-      });
+        B: this.plan.includes('B') ? 'packed' : 'NIL',
+        L: this.plan.includes('L') ? 'packed' : 'NIL',
+        D: this.plan.includes('D') ? 'packed' : 'NIL',
+      };
+      attendanceRecords.push(attendance);
     }
 
     this.attendances = attendanceRecords;
