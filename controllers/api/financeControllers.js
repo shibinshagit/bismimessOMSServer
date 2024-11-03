@@ -24,20 +24,81 @@ const getTotalPaymentsReceived = async (req, res) => {
     }
   };
 
-const getPendingPayments = async (req, res) => {
+  const getPendingPayments = async (req, res) => {
     try {
-      // Fetch expired orders
-      const orders = await Order.find({ status: 'expired' })
-        .populate('userId', 'isDeleted')
-        .lean();
+      const pendingPaymentsAggregation = await Order.aggregate([
+        // 1. Match orders with status 'expired'
+        {
+          $match: {
+            status: 'expired',
+          },
+        },
+        // 2. Lookup to join with users and fetch 'isDeleted' status
+        {
+          $lookup: {
+            from: 'users', // Ensure this matches your User collection name
+            localField: 'userId',
+            foreignField: '_id',
+            as: 'user',
+          },
+        },
+        // 3. Unwind the user array
+        {
+          $unwind: '$user',
+        },
+        // 4. Exclude orders where user is deleted or userId is null
+        {
+          $match: {
+            'user.isDeleted': false,
+            'user._id': { $ne: null },
+          },
+        },
+        // 5. Sort by userId and orderEnd descending to get latest orders first
+        {
+          $sort: {
+            userId: 1,
+            orderEnd: -1,
+          },
+        },
+        // 6. Group by userId and select the first (latest) order per user
+        {
+          $group: {
+            _id: '$userId',
+            latestOrder: { $first: '$$ROOT' },
+          },
+        },
+        // 7. Add totalLeaves by summing numberOfLeaves from the leave array
+        {
+          $addFields: {
+            totalLeaves: {
+              $sum: {
+                $map: {
+                  input: '$latestOrder.leave',
+                  as: 'leaveEntry',
+                  in: { $ifNull: ['$$leaveEntry.numberOfLeaves', 0] },
+                },
+              },
+            },
+          },
+        },
+        // 8. Project necessary fields
+        {
+          $project: {
+            _id: 0,
+            userId: '$_id',
+            plan: '$latestOrder.plan',
+            totalLeaves: 1,
+          },
+        },
+      ]);
   
-      // Filter out orders where user is deleted or userId is null
-      const validOrders = orders.filter(order => order.userId && !order.userId.isDeleted);
-  
+      // Initialize pendingAmount
       let pendingAmount = 0;
   
-      validOrders.forEach(order => {
-        const planLength = order.plan.length;
+      // Iterate through the aggregated results to calculate pendingAmount
+      pendingPaymentsAggregation.forEach((order) => {
+        const { plan, totalLeaves } = order;
+        const planLength = Array.isArray(plan) ? plan.length : 0;
         let baseAmount = 0;
   
         if (planLength === 3) {
@@ -48,10 +109,7 @@ const getPendingPayments = async (req, res) => {
           baseAmount = 1500;
         }
   
-        // Calculate total leaves
-        const totalLeaves = order.leave ? order.leave.length : 0;
-  
-        // Deduct leaves
+        // Calculate deduction based on planLength and totalLeaves
         let deduction = 0;
         if (planLength === 3) {
           deduction = totalLeaves * 100;
@@ -59,9 +117,11 @@ const getPendingPayments = async (req, res) => {
           deduction = totalLeaves * 80;
         }
         // For planLength ===1, no deduction
+        console.log(baseAmount, deduction)
+        // Ensure deduction does not exceed baseAmount
+        const amount = baseAmount - deduction >= 0 ? baseAmount - deduction : 0;
   
-        const amount = baseAmount - deduction;
-  
+        // Add to pendingAmount
         pendingAmount += amount;
       });
   
@@ -71,7 +131,6 @@ const getPendingPayments = async (req, res) => {
       res.status(500).json({ message: 'Error fetching pending payments' });
     }
   };
-  
   const getTransactionHistory = async (req, res) => {
     try {
         const { page = 1, limit = 10, search = '' } = req.query;
