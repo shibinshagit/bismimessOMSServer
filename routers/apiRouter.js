@@ -15,12 +15,7 @@ router.use(express.json(), express.urlencoded({ extended: true }))
 
 // ========================================================
 router.put('/user/:userId', controllers.location);
-
 router.post('/login',controllers.login );
-// router.post('/postorder',controllers.postOrder );
-// router.post('/users',controllers.postUser );
-// router.post('/orders',controllers.postOrder );
-// router.post('/users',controllers.postUser );
 router.get('/users/:id',controllers.getUsers );
 router.get('/user/:id', controllers.getUserById);
 router.get('/statistics',controllers.getDailyStatistics );
