@@ -114,7 +114,7 @@ const getTotalPaymentsReceived = async (req, res) => {
         if (planLength === 3) {
           deduction = totalLeaves * 100;
         } else if (planLength === 2) {
-          deduction = totalLeaves * 80;
+          deduction = totalLeaves * 70;
         }
         // For planLength ===1, no deduction
         console.log(baseAmount, deduction)

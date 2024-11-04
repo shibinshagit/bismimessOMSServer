@@ -1,3 +1,4 @@
+// imports---------------------------------------------------------------------------------------------------------------------
 const mongoose = require("mongoose");
 const cron = require('node-cron');
 const bcrypt = require("bcrypt");
@@ -10,16 +11,38 @@ const Point = require("../../Models/PointSchema");
 const Order = require("../../Models/OrderSchema");
 const Attendance = require("../../Models/attendanceSchema");
 const fs = require('fs');
+// ------------------------------------------------------------------------------------------------------------------------------end
 
+// Helper Functions----------------------------------------------------------------------------------------------------------------
 
-// attendance operations===========================================================================================================================
+const stripTime = (date) => {
+  const utcDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  return utcDate;
+};
+
 /**
- * Adds attendance records for new dates within the updated date range based on the user's plan.
- * @param {Object} order - The order document.
- * @param {Date} newStartDate - New start date of the order.
- * @param {Date} newEndDate - New end date of the order.
- * @param {Array} plan - User's current plan (e.g., ['B', 'L'])
+ * Helper function to determine if two date ranges overlap
  */
+const isOverlapping = (start1, end1, start2, end2) => {
+  return start1 <= end2 && start2 <= end1;
+};
+
+/**
+ * Helper function to extract public ID from Cloudinary URL
+ */
+const getPublicIdFromUrl = (url) => {
+  if (!url) {
+    console.error('getPublicIdFromUrl: url is undefined or null');
+    return null;
+  }
+  const parts = url.split('/');
+  const filename = parts.pop();
+  const publicId = filename.split('.')[0];
+  return `dropoff_areas/${publicId}`;
+};
+// ------------------------------------------------------------------------------------------------------------------------------end
+
+// Attendance Management Functions--------------------------------------------------------------------------------------------
 const updateAttendancesForNewPlanAndDateRange = (order, newStartDate, newEndDate, newPlan) => {
   const newStart = stripTime(new Date(newStartDate));
   const newEnd = stripTime(new Date(newEndDate));
@@ -82,9 +105,6 @@ const updateAttendancesForNewPlanAndDateRange = (order, newStartDate, newEndDate
   }
 };
 
-
-
-// ===================================================================================================================================
 const removeAttendancesOutsideNewDateRange = (order, newStartDate, newEndDate) => {
   const newStart = stripTime(newStartDate);
   const newEnd = stripTime(newEndDate);
@@ -94,7 +114,7 @@ const removeAttendancesOutsideNewDateRange = (order, newStartDate, newEndDate) =
     return attDate >= newStart && attDate <= newEnd;
   });
 };
-// ====================================================================================================================================
+
 const markLeaveInAttendances = (order, startDate, endDate, plan = 'BLD') => {
   const start = stripTime(new Date(startDate));
   const end = stripTime(new Date(endDate));
@@ -128,7 +148,7 @@ const markLeaveInAttendances = (order, startDate, endDate, plan = 'BLD') => {
       existingAttendance.D = 'leave';
     }
   }
-};  
+};
 
 const unmarkLeaveInAttendances = (order, startDate, endDate, plan = 'BLD') => {
   const start = stripTime(new Date(startDate));
@@ -157,9 +177,27 @@ const unmarkLeaveInAttendances = (order, startDate, endDate, plan = 'BLD') => {
   }
 };
 
+const initializeAttendances = (order, startDate, endDate, plan, isVeg) => {
+  const start = stripTime(startDate);
+  const end = stripTime(endDate);
+  const dayMilliseconds = 24 * 60 * 60 * 1000;
+  const attendanceRecords = [];
 
+  for (let d = new Date(start); d <= end; d = new Date(d.getTime() + dayMilliseconds)) {
+    const attendance = {
+      date: new Date(d),
+      B: plan.includes('B') ? 'packed' : 'NIL',
+      L: plan.includes('L') ? 'packed' : 'NIL',
+      D: plan.includes('D') ? 'packed' : 'NIL',
+    };
+    attendanceRecords.push(attendance);
+  }
 
-// login=======================================================================================================================
+  order.attendances = attendanceRecords;
+};
+// ------------------------------------------------------------------------------------------------------------------------------end
+
+// Controller Functions----------------------------------------------------------------------------------------------------------------
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -194,6 +232,7 @@ const login = async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 };
+
 const postUser = async (req, res) => {
   try {
     const { name, phone, email, point, status } = req.body;
@@ -225,111 +264,6 @@ const postUser = async (req, res) => {
   }
 };
 
-// Helper function to strip time from Date
-const stripTime = (date) => {
-  const utcDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  return utcDate;
-};
-      
-   
-// POST /api/orders
-// const postOrder = async (req, res) => {
-//   try {
-//     const {
-//       userId,                                      
-//       plan,
-//       paymentStatus,
-//       amount,
-//       paymentMethod,
-//       paymentId,
-//       orderStart,
-//       orderEnd,
-//     } = req.body;
-
-//     console.log('Order Data:', req.body);
-
-//     // Validate required fields
-//     if (!userId) {
-//       return res.status(400).json({ message: "User ID is required" });
-//     }
-
-//     if (!plan || plan.length === 0) {
-//       return res.status(400).json({ message: "Plan is required" });
-//     }
-
-//     if (!paymentStatus) {
-//       return res.status(400).json({ message: "Payment status is required" });
-//     }
-
-//     if (!orderStart || !orderEnd) {
-//       return res.status(400).json({ message: "Order start and end dates are required" });
-//     }
-
-//     // Check if user exists
-//     const user = await User.findById(userId);
-//     if (!user) {
-//       return res.status(404).json({ message: "User not found" });
-//     }
-
-//     // Determine order status
-//     let orderStatus = "Expiring Soon";
-
-//     const currentDate = stripTime(new Date());
-//     const orderStartDate = stripTime(new Date(orderStart));
-//     const orderEndDate = stripTime(new Date(orderEnd));
-
-//     if (!isNaN(orderStartDate) && !isNaN(orderEndDate)) {
-//       if (orderStartDate <= currentDate && currentDate <= orderEndDate) {
-//         orderStatus = "Active";
-//       } else if (currentDate < orderStartDate) {
-//         orderStatus = "Expiring Soon";
-//       } else {
-//         orderStatus = "Expired";
-//       }
-//     } else {
-//       console.error("Invalid date(s) provided");
-//       return res.status(400).json({ message: "Invalid date(s) provided" });
-//     }
-
-//     // Build order data
-//     const orderData = {
-//       userId,
-//       plan,
-//       orderStart,
-//       orderEnd,
-//       leave: [],
-//       status: orderStatus,
-//       paymentStatus,
-//     };
-
-//     // Handle payment details if paymentStatus is 'Completed'
-//     if (paymentStatus === 'Completed') {
-//       if (!amount || !paymentMethod || !paymentId) {
-//         return res.status(400).json({ message: "Payment details are required when payment is completed" });
-//       }
-//       orderData.amount = amount;
-//       orderData.paymentMethod = paymentMethod;
-//       orderData.paymentId = paymentId;
-//     }
-
-//     // Create new order
-//     const newOrder = new Order(orderData);
-
-//     await newOrder.save();
-
-//     // Add order ID to user's orders array
-//     user.orders.push(newOrder._id);
-//     await user.save();
-
-//     res.status(201).json({
-//       message: "Order added successfully",
-//       orderId: newOrder._id,
-//     });
-//   } catch (error) {
-//     console.error("Error adding order:", error);
-//     res.status(500).json({ message: "Error adding order" });
-//   }
-// };
 const postOrder = async (req, res) => {
   try {
     const {
@@ -426,71 +360,6 @@ const postOrder = async (req, res) => {
   }
 };
 
-
-
-
-// getUsers==============================================================================================================
-
-// const getUsers = async (req, res) => {
-//   try {
-//     const users = await User.find().populate("orders");
-//     res.status(200).json(users);
-//   } catch (error) {
-//     console.error("Error fetching users:", error);
-//     res.status(500).json({ message: "Failed to fetch users" });
-//   }
-// };
-
-// const getUsers = async (req, res) => {
-//   try {
-//     const today = new Date();
-
-//     // Fetch users with their orders where orderEnd is greater than or equal to today
-//     const users = await User.aggregate([
-//       {
-//         $lookup: {
-//           from: "orders",
-//           localField: "orders",
-//           foreignField: "_id",
-//           as: "orders",
-//         },
-//       },
-//       {
-//         $addFields: {
-//           orders: {
-//             $filter: {
-//               input: "$orders",
-//               as: "order",
-//               cond: { $gte: ["$$order.orderEnd", today] },
-//             },
-//           },
-//         },
-//       },
-//       {
-//         $addFields: {
-//           latestOrder: {
-//             $arrayElemAt: ["$orders", -1],
-//           },
-//         },
-//       },
-//       {
-//         $project: {
-//           name: 1,
-//           phone: 1,
-//           place: 1,
-//           paymentStatus: 1,
-//           startDate: 1,
-//           latestOrder: 1,
-//         },
-//       },
-//     ]);
-
-//     res.status(200).json(users);
-//   } catch (error) {
-//     console.error("Error fetching users:", error);
-//     res.status(500).json({ message: "Failed to fetch users" });
-//   }
-// };
 const getUsers = async (req, res) => {
   try {
     const today = stripTime(new Date());
@@ -592,6 +461,7 @@ const getUsers = async (req, res) => {
             orderStart: 1,
             orderEnd: 1,
             status: 1,
+            leave: 1,
             // Exclude 'attendances' field
           },
           // Optionally include isPastOrder if needed
@@ -607,7 +477,9 @@ const getUsers = async (req, res) => {
   }
 };
 
-// get user by id--
+/**
+ * Get user by ID
+ */
 const getUserById = async (req, res) => {
   try {
     const { id } = req.params;  // Get the user ID from the route parameters
@@ -635,14 +507,6 @@ const getUserById = async (req, res) => {
           },
         },
       },
-      // If you have an 'attendance' field in the User model
-      // {
-      //   $addFields: {
-      //     latestAttendance: {
-      //       $arrayElemAt: ["$attendance", -1],  // Get the latest attendance in the attendance array
-      //     },
-      //   },
-      // },
       {
         $project: {
           name: 1,
@@ -653,7 +517,6 @@ const getUserById = async (req, res) => {
           startDate: 1,
           images: 1,              // Include images in the response
           latestOrder: 1,         // Return the latest order details
-          // latestAttendance: 1,  // Uncomment if you have attendance data
         },
       },
     ]);
@@ -669,6 +532,9 @@ const getUserById = async (req, res) => {
   }
 };
 
+/**
+ * Get Points with Leave Today
+ */
 const getPointsWithLeaveToday = async (req, res) => {
   try {
     const today = stripTime(new Date());
@@ -800,8 +666,9 @@ const getPointsWithLeaveToday = async (req, res) => {
   }
 };
 
-// getDailyStatistics=====================================================================================================
-
+/**
+ * Get Daily Statistics
+ */
 const getDailyStatistics = async (req, res) => {
   const { date } = req.query;
   try {
@@ -847,101 +714,8 @@ const getDailyStatistics = async (req, res) => {
   }
 };
 
-// editUser======================================================================================================================
-// const editUser = async (req, res) => {
-//   try {
-//     const userId = req.params.id;
-//     const { name, phone, place, plan, paymentStatus, startDate, endDate } = req.body;
-//     const updatedUserData = req.body;
-
-//     if (!mongoose.Types.ObjectId.isValid(userId)) {
-//       return res.status(400).json({ message: "Invalid user ID" });
-//     }
-
-//     const user = User.findById({userId});
-//     console.log(user)
-//     const userExistingPhone = user.phone;
-//     if (!userExistingPhone === phone) {
-//       const existingUser = await User.findOne({ phone });
-//       if (existingUser) {
-//         return res.status(400).json({ message: "Phone number already exists" });
-//       }
-//     }
-
-//     if (paymentStatus) {
-//       if (plan.length === 0) {
-//         return res.status(204).json({ message: "Fill all plan data" });
-//       }
-
-//       let orderStatus = "soon";
-
-//       const currentDate = new Date();
-//       const orderStartDate = new Date(startDate);
-//       const orderEndDate = new Date(endDate);
-
-//       if (!isNaN(orderStartDate) && !isNaN(orderEndDate)) {
-//         if (orderStartDate <= currentDate && currentDate <= orderEndDate) {
-//           orderStatus = "active";
-//         }
-//       } else {
-//         console.error("Invalid date(s) provided");
-//       }
-
-//       console.log(orderStatus);
-
-//       const newOrder = new Order({
-//         userId: newUser._id,
-//         plan,
-//         orderStart: startDate,
-//         orderEnd: endDate,
-//         leave: [],
-//         status: orderStatus,
-//       });
-
-//       await newOrder.save();
-//       newUser.orders.push(newOrder._id);
-//       await newUser.save();
-//     }
-//     const updatedUser = await User.findByIdAndUpdate(
-//       userId,
-//       { $set: updatedUserData },
-//       { new: true, runValidators: true }
-//     );
-
-//     if (!updatedUser) {
-//       return res.status(404).json({ message: "User not found" });
-//     }
-
-//     res.status(200).json(updatedUser);
-//   } catch (error) {
-//     console.error("Error updating user:", error);
-//     res.status(500).json({ message: "Server error" });
-//   }
-// };
-
-// edit user ======================================================================
-
-const initializeAttendances = (order, startDate, endDate, plan) => {
-  const start = stripTime(startDate);
-  const end = stripTime(endDate);
-  const dayMilliseconds = 24 * 60 * 60 * 1000;
-  const attendanceRecords = [];
-
-  for (let d = new Date(start); d <= end; d = new Date(d.getTime() + dayMilliseconds)) {
-    const attendance = {
-      date: new Date(d),
-      B: plan.includes('B') ? 'packed' : 'NIL',
-      L: plan.includes('L') ? 'packed' : 'NIL',
-      D: plan.includes('D') ? 'packed' : 'NIL',
-    };
-    attendanceRecords.push(attendance);
-  }
-
-  order.attendances = attendanceRecords;
-};
-
 /**
- * Updates a user's details and manages orders with overlap checks.
+ * Edit User
  */
 const editUser = async (req, res) => {
   try {
@@ -1078,7 +852,7 @@ const editUser = async (req, res) => {
         latestOrder.paymentId = paymentId;
         latestOrder.isVeg = isVeg;
 
-        updateAttendancesForNewPlanAndDateRange(latestOrder, orderStartDate, orderEndDate, planArray, isVeg);
+        updateAttendancesForNewPlanAndDateRange(latestOrder, orderStartDate, orderEndDate, planArray);
 
         await latestOrder.save();
       } else {
@@ -1119,49 +893,553 @@ const editUser = async (req, res) => {
   }
 };
 
-// Helper function to determine if two date ranges overlap
-const isOverlapping = (start1, end1, start2, end2) => {
-  return start1 <= end2 && start2 <= end1;
-};
+/**
+ * Add Leave
+ */
+const addLeave = async (req, res) => {
+  const { orderId } = req.params;
+  const { leaveStart, leaveEnd, plan = 'BLD' } = req.body; // Default plan to 'BLD' if not provided
 
+  console.log('Leave Start:', leaveStart);
+  console.log('Leave End:', leaveEnd);
 
-// Helper function to extract public ID from Cloudinary URL
-const getPublicIdFromUrl = (url) => {
-  if (!url) {
-    console.error('getPublicIdFromUrl: url is undefined or null');
-    return null;
+  try {
+    const order = await Order.findById(orderId);
+
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    const leaveStartDate = stripTime(new Date(leaveStart));
+    const leaveEndDate = stripTime(new Date(leaveEnd));
+    const orderStartDate = stripTime(new Date(order.orderStart));
+    const orderEndDate = stripTime(new Date(order.orderEnd));
+
+    if (leaveStartDate > leaveEndDate) {
+      return res.status(400).json({ message: 'Leave start date cannot be after the leave end date' });
+    }
+
+    if (leaveStartDate < orderStartDate || leaveEndDate > orderEndDate) {
+      return res.status(400).json({ message: 'Leave dates must be within the order date range' });
+    }
+
+    const differenceInTime = leaveEndDate - leaveStartDate;
+    const differenceInDays = Math.ceil(differenceInTime / (1000 * 60 * 60 * 24));
+    const numberOfLeaves = differenceInDays + 1;
+
+    const totalLeaveDays = order.leave.reduce((acc, leave) => acc + leave.numberOfLeaves, 0) + numberOfLeaves;
+
+    if (totalLeaveDays > 8) {
+      return res.status(400).json({ message: 'Total number of leave days cannot exceed 8 for this order' });
+    }
+
+    const overlappingLeave = order.leave.some(
+      (leave) =>
+        leaveStartDate <= stripTime(new Date(leave.end)) &&
+        leaveEndDate >= stripTime(new Date(leave.start))
+    );
+
+    if (overlappingLeave) {
+      return res.status(400).json({ message: 'The new leave period overlaps with an existing leave' });
+    }
+
+    order.leave.push({
+      start: leaveStartDate,
+      end: leaveEndDate,
+      numberOfLeaves,
+    });
+
+    markLeaveInAttendances(order, leaveStartDate, leaveEndDate, plan); // Pass `plan` to the function
+
+    await updateOrderStatus(order);
+
+    await order.save();
+
+    return res.status(200).json({ message: 'Leave added successfully' });
+  } catch (error) {
+    console.error('Error adding leave:', error);
+    return res.status(500).json({ message: 'Internal server error' });
   }
-  const parts = url.split('/');
-  const filename = parts.pop();
-  const publicId = filename.split('.')[0];
-  return `dropoff_areas/${publicId}`;
 };
 
-                  
-// deleteUser===========================================================================================================================================
-const deleteUser = async (req, res) => {
+/**
+ * Edit Leave
+ */
+const editLeave = async (req, res) => {
+  const { orderId, leaveId } = req.params;
+  const { leaveStart, leaveEnd, plan = 'BLD' } = req.body; // Default plan to 'BLD' if not provided
+
+  if (!mongoose.Types.ObjectId.isValid(orderId)) {
+    return res.status(400).json({ message: 'Invalid order ID' });
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(leaveId)) {
+    return res.status(400).json({ message: 'Invalid leave ID' });
+  }
+
+  try {
+    const order = await Order.findById(orderId);
+
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    const leaveToEdit = order.leave.id(leaveId);
+    if (!leaveToEdit) {
+      return res.status(404).json({ message: 'Leave not found' });
+    }
+
+    const oldLeaveStart = stripTime(new Date(leaveToEdit.start));
+    const oldLeaveEnd = stripTime(new Date(leaveToEdit.end));
+
+    const newLeaveStartDate = stripTime(new Date(leaveStart));
+    const newLeaveEndDate = stripTime(new Date(leaveEnd));
+    const orderStartDate = stripTime(new Date(order.orderStart));
+    const orderEndDate = stripTime(new Date(order.orderEnd));
+
+    if (newLeaveStartDate > newLeaveEndDate) {
+      return res.status(400).json({ message: 'Leave start date cannot be after the leave end date' });
+    }
+
+    if (newLeaveStartDate < orderStartDate || newLeaveEndDate > orderEndDate) {
+      return res.status(400).json({ message: 'Leave dates must be within the order date range' });
+    }
+
+    const differenceInTime = newLeaveEndDate - newLeaveStartDate;
+    const differenceInDays = Math.ceil(differenceInTime / (1000 * 60 * 60 * 24));
+    const numberOfLeaves = differenceInDays + 1;
+
+    const totalLeaveDays = order.leave.reduce((acc, leave) => {
+      if (leave._id.toString() === leaveId) return acc;
+      return acc + leave.numberOfLeaves;
+    }, 0) + numberOfLeaves;
+
+    if (totalLeaveDays > 8) {
+      return res.status(400).json({ message: 'Total number of leave days cannot exceed 8 for this order' });
+    }
+
+    const overlappingLeave = order.leave.some((leave) => {
+      if (leave._id.toString() === leaveId) return false;
+      const existingLeaveStart = stripTime(new Date(leave.start));
+      const existingLeaveEnd = stripTime(new Date(leave.end));
+      return newLeaveStartDate <= existingLeaveEnd && newLeaveEndDate >= existingLeaveStart;
+    });
+
+    if (overlappingLeave) {
+      return res.status(400).json({ message: 'The edited leave period overlaps with an existing leave' });
+    }
+
+    // Unmark the old leave period in attendances
+    unmarkLeaveInAttendances(order, oldLeaveStart, oldLeaveEnd, plan); // Pass `plan` explicitly
+
+    // Update the leave details
+    leaveToEdit.start = newLeaveStartDate;
+    leaveToEdit.end = newLeaveEndDate;
+    leaveToEdit.numberOfLeaves = numberOfLeaves;
+
+    // Mark the new leave period in attendances
+    markLeaveInAttendances(order, newLeaveStartDate, newLeaveEndDate, plan); // Pass `plan` to the function
+
+    await updateOrderStatus(order);
+
+    await order.save();
+
+    return res.status(200).json({ message: 'Leave updated successfully' });
+  } catch (error) {
+    console.error('Error editing leave:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+/**
+ * Delete Leave
+ */
+const deleteLeave = async (req, res) => {
+  const { orderId, leaveId } = req.params;
+
+  // Validate ObjectId formats
+  if (!mongoose.Types.ObjectId.isValid(orderId)) {
+    return res.status(400).json({ message: 'Invalid order ID' });
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(leaveId)) {
+    return res.status(400).json({ message: 'Invalid leave ID' });
+  }
+
+  try {
+    const order = await Order.findById(orderId);
+
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    // Find the leave to be deleted
+    const leaveToDelete = order.leave.id(leaveId);
+    if (!leaveToDelete) {
+      return res.status(404).json({ message: 'Leave not found' });
+    }
+
+    const leaveStartDate = stripTime(new Date(leaveToDelete.start));
+    const leaveEndDate = stripTime(new Date(leaveToDelete.end));
+
+    // Unmark the leave period in attendances
+    unmarkLeaveInAttendances(order, leaveStartDate, leaveEndDate);
+
+    // Remove the leave from the leave array by ID
+    order.leave.pull({ _id: leaveId });
+
+    // Update the order's status based on the remaining leaves
+    await updateOrderStatus(order);
+
+    // Save the updated order
+    await order.save();
+
+    return res.status(200).json({ message: 'Leave deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting leave:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+/**
+ * Update User Attendance
+ */
+const updateUserAttendance = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { date, meal } = req.body;
+    console.log(userId, req.body);
+
+    // Validate input
+    console.log('here');
+    const { error } = Attendance.validate(req.body);
+
+    if (error) {
+      console.log('here1');
+      return res.status(400).json({ message: error.details[0].message });
+    }
+    console.log('here2');
+    // Validate User ID
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      console.log('here4');
+      return res.status(400).json({ message: 'Invalid User ID' });
+    }
+    console.log('here5');
+    // Find the User
+    const user = await User.findById(userId).populate('orders');
+    if (!user) {
+      console.log('here6');
+      return res.status(404).json({ message: 'User not found' });
+    }
+    console.log('here8');
+    // Find the latest order
+    const latestOrder = user.orders.sort((a, b) => new Date(b.orderStart) - new Date(a.orderStart))[0];
+    if (!latestOrder) {
+      return res.status(404).json({ message: 'No orders found for user' });
+    }
+
+    // Ensure the latest order is active on the given date
+    const orderStart = stripTime(new Date(latestOrder.orderStart));
+    const orderEnd = stripTime(new Date(latestOrder.orderEnd));
+    const targetDate = stripTime(new Date(date));
+
+    if (targetDate < orderStart || targetDate > orderEnd) {
+      return res.status(400).json({ message: 'Date is outside the order period' });
+    }
+
+    // Check if the date is a leave day
+    const isLeaveDay = latestOrder.leave.some((leave) => {
+      const leaveStart = stripTime(new Date(leave.start));
+      const leaveEnd = stripTime(new Date(leave.end));
+      return targetDate >= leaveStart && targetDate <= leaveEnd;
+    });
+
+    if (isLeaveDay) {
+      return res.status(400).json({ message: 'Cannot mark attendance on leave days' });
+    }
+
+    // Initialize attendance if not present for the date
+    if (!latestOrder.attendances) {
+      latestOrder.attendances = [];
+    }
+
+    // Find the attendance record for the selected date
+    let attendanceRecord = latestOrder.attendances.find(
+      (att) => stripTime(att.date).getTime() === targetDate.getTime()
+    );
+
+    if (!attendanceRecord) {
+      return res.status(400).json({ message: 'Attendance record for the selected date does not exist. Please wait for the cron job to create it.' });
+    }
+
+    // Validate current status before updating
+    const currentStatus = attendanceRecord[meal];
+    if (currentStatus === 'delivered') {
+      return res.status(400).json({ message: `Meal ${meal} is already marked as delivered` });
+    }
+
+    // Update the specific meal status to 'delivered'
+    attendanceRecord[meal] = 'delivered';
+
+    // Save the updated order
+    await latestOrder.save();
+
+    res.status(200).json({
+      message: 'Attendance updated successfully',
+      attendance: attendanceRecord,
+    });
+  } catch (error) {
+    // logger.error('Error updating user attendance: %o', error);
+    res.status(500).json({ message: 'Failed to update attendance' });
+  }
+};
+
+/**
+ * Location Update
+ */
+const location = async (req, res) => {
+  try {
+    console.log('here it is');
+    const { userId } = req.params; // Assuming userId is passed as a route parameter
+    const { latitude, longitude } = req.body; // Extract latitude and longitude from the request body
+
+    // Find the user by their ID and update the location
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { location: { latitude, longitude } },
+      { new: true } // Return the updated document
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.status(200).json({
+      message: "Location updated successfully",
+      user: updatedUser,
+    });
+  } catch (error) {
+    console.error("Error updating location:", error);
+    res.status(500).json({ message: "Error updating location" });
+  }
+};
+
+/**
+ * Renew Order
+ */
+const renewOrder = async (req, res) => {
+  const userId = req.params.id;
+  const {
+    plan,
+    paymentStatus,
+    startDate,
+    endDate,
+    amount,
+    paymentMethod,
+    paymentId,
+    isVeg,
+  } = req.body;
+
+  try {
+    // Fetch the user
+    const user = await User.findById(userId).populate('orders');
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Validate input
+    if (!paymentStatus) {
+      return res.status(400).json({ message: "Payment status is required" });
+    }
+
+    if (!plan || plan.length === 0) {
+      return res.status(400).json({ message: "Plan details are required" });
+    }
+
+    // Validate dates
+    const orderStartDate = stripTime(new Date(startDate));
+    const orderEndDate = stripTime(new Date(endDate));
+    const currentDate = stripTime(new Date());
+
+    if (isNaN(orderStartDate) || isNaN(orderEndDate)) {
+      return res.status(400).json({ message: "Invalid date(s) provided" });
+    }
+
+    if (orderStartDate > orderEndDate) {
+      return res.status(400).json({ message: "Order start date cannot be after end date" });
+    }
+
+    // Determine the status based on the dates
+    let orderStatus = "soon";
+    if (orderStartDate <= currentDate && currentDate <= orderEndDate) {
+      orderStatus = "active";
+    } else if (currentDate > orderEndDate) {
+      orderStatus = "expired";
+    }
+
+    // Check for overlapping with any existing orders
+    const overlappingOrder = user.orders.find(order => {
+      const orderStart = stripTime(new Date(order.orderStart)).getTime();
+      const orderEnd = stripTime(new Date(order.orderEnd)).getTime();
+      return isOverlapping(orderStartDate.getTime(), orderEndDate.getTime(), orderStart, orderEnd);
+    });
+
+    if (overlappingOrder) {
+      return res.status(400).json({ message: "New order dates overlap with an existing order." });
+    }
+
+    // Create a new order
+    const newOrder = new Order({
+      userId: user._id,
+      plan,
+      orderStart: startDate,
+      orderEnd: endDate,
+      leave: [],
+      status: orderStatus,
+      paymentStatus,
+      amount,
+      paymentMethod,
+      paymentId,
+      isVeg,
+    });
+
+    // Initialize attendances
+    initializeAttendances(newOrder, orderStartDate, orderEndDate, plan, isVeg);
+
+    await newOrder.save();
+
+    // Add the new order to the user's orders
+    user.orders.push(newOrder._id);
+
+    await user.save();
+
+    res.status(200).json({ message: 'Order renewed successfully' });
+  } catch (error) {
+    console.error('Error renewing order:', error);
+    res.status(500).json({ message: 'Error renewing order' });
+  }
+};
+
+/**
+ * Trash User
+ */
+const trashUser = async (req, res) => {
   try {
     const userId = req.params.id;
-
-    // Find the user by ID
     const user = await User.findById(userId);
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Delete all orders associated with the users
-    await Order.deleteMany({ userId });
+    user.isDeleted = true;
+    await user.save();
+    return res.status(200).json({ message: 'User moved to trash' });
+  } catch (error) {
+    console.error('Error trashing user:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+};
+
+/**
+ * Soft Delete User
+ */
+const softDeleteUser = async (req, res) => {
+  const userId = req.params.id;
+
+  try {
+    // Find the user by ID
+    const user = await User.findById(userId);
+
+    // If user not found, return 404 error
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Set isDeleted to true
+    user.isDeleted = true;
+
+    // Save the updated user
+    await user.save();
+
+    res.status(200).json({ message: 'User deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    res.status(500).json({ message: 'Error deleting user' });
+  }
+};
+
+/**
+ * Get Soft Deleted Users
+ */
+const getSoftDeletedUsers = async (req, res) => {
+  try {
+    const deletedUsers = await User.find({ isDeleted: true }).populate('point');
+    res.status(200).json(deletedUsers);
+  } catch (error) {
+    console.error('Error fetching deleted users:', error);
+    res.status(500).json({ message: 'Error fetching deleted users' });
+  }
+};
+
+/**
+ * Restore Deleted User
+ */
+const restoreDeletedUsers = async (req, res) => {
+  const userId = req.params.id;
+
+  try {
+    // Find the user by ID
+    const user = await User.findById(userId);
+
+    // If user not found or not deleted, return error
+    if (!user || !user.isDeleted) {
+      return res.status(404).json({ message: 'User not found or not deleted' });
+    }
+
+    // Set isDeleted to false
+    user.isDeleted = false;
+
+    // Save the updated user
+    await user.save();
+
+    res.status(200).json({ message: 'User restored successfully' });
+  } catch (error) {
+    console.error('Error restoring user:', error);
+    res.status(500).json({ message: 'Error restoring user' });
+  }
+};
+
+/**
+ * Hard Delete User
+ */
+const hardDeleteUser = async (req, res) => {
+  const userId = req.params.id;
+
+  try {
+    // Find the user by ID
+    const user = await User.findById(userId);
+
+    // If user not found, return 404 error
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Delete associated orders
+    await Order.deleteMany({ userId: user._id });
 
     // Delete the user
     await User.findByIdAndDelete(userId);
 
-    return res.status(200).json({ message: 'User and their orders deleted permanently' });
+    return res.status(200).json({ message: 'User permanently deleted' });
   } catch (error) {
-    console.error('Error deleting user and their orders:', error);
-    return res.status(500).json({ message: 'Server error' });
+    console.error('Error permanently deleting user:', error);
+    res.status(500).json({ message: 'Error permanently deleting user' });
   }
 };
+// ------------------------------------------------------------------------------------------------------------------------------end
+
+// Points Controller Functions-----------------------------------------------------------------------------------------------
 const getPointsWithExpiredUsers = async (req, res) => {
   try {
     const today = stripTime(new Date());
@@ -1291,7 +1569,6 @@ const getPointsWithExpiredUsers = async (req, res) => {
     res.status(500).json({ message: "Failed to fetch points with expired users" });
   }
 };
-// controllers/pointController.js
 
 const getPointsWithStatistics = async (req, res) => {
   try {
@@ -1524,7 +1801,7 @@ const getPointsWithStatistics = async (req, res) => {
 };
 
 /**
- * Fetches all users associated with a specific point ID.
+ * Get Users by Point ID
  */
 const getUsersByPointId = async (req, res) => {
   try {
@@ -1543,128 +1820,15 @@ const getUsersByPointId = async (req, res) => {
     res.status(500).json({ message: 'Failed to fetch users' });
   }
 };
+// ------------------------------------------------------------------------------------------------------------------------------end
 
+// Additional Controller Functions-------------------------------------------------------------------------------------------------
 /**
- * Updates a user's attendance status for a specific meal on a given date.
- * Expected payload:
- * {
- *   "date": "2024-10-31", // YYYY-MM-DD
- *   "meal": "B" // 'B' for Breakfast, 'L' for Lunch, 'D' for Dinner
- * }
+ * Get Points with Leave Today
  */
-const updateUserAttendance = async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { date, meal } = req.body;
-console.log(userId,req.body)
-    // Validate input
-    console.log('here')
-    const { error } = Attendance.validate(req.body);
-
-    if (error) {
-      console.log('here1')
-      return res.status(400).json({ message: error.details[0].message });
-    }
-    console.log('here2')
-    // Validate User ID
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      console.log('here4')
-      return res.status(400).json({ message: 'Invalid User ID' });
-    }
-    console.log('here5')
-    // Find the User
-    const user = await User.findById(userId).populate('orders');
-    if (!user) {
-      console.log('here6')
-      return res.status(404).json({ message: 'User not found' });
-    }
-    console.log('here8')
-    // Find the latest order
-    const latestOrder = user.orders.sort((a, b) => new Date(b.orderStart) - new Date(a.orderStart))[0];
-    if (!latestOrder) {
-      return res.status(404).json({ message: 'No orders found for user' });
-    }
-
-    // Ensure the latest order is active on the given date
-    const orderStart = stripTime(new Date(latestOrder.orderStart));
-    const orderEnd = stripTime(new Date(latestOrder.orderEnd));
-    const targetDate = stripTime(new Date(date));
-
-    if (targetDate < orderStart || targetDate > orderEnd) {
-      return res.status(400).json({ message: 'Date is outside the order period' });
-    }
-
-    // Check if the date is a leave day
-    const isLeaveDay = latestOrder.leave.some((leave) => {
-      const leaveStart = stripTime(new Date(leave.start));
-      const leaveEnd = stripTime(new Date(leave.end));
-      return targetDate >= leaveStart && targetDate <= leaveEnd;
-    });
-
-    if (isLeaveDay) {
-      return res.status(400).json({ message: 'Cannot mark attendance on leave days' });
-    }
-
-    // Initialize attendance if not present for the date
-    if (!latestOrder.attendances) {
-      latestOrder.attendances = [];
-    }
-
-    // Find the attendance record for the selected date
-    let attendanceRecord = latestOrder.attendances.find(
-      (att) => stripTime(att.date).getTime() === targetDate.getTime()
-    );
-
-    if (!attendanceRecord) {
-      return res.status(400).json({ message: 'Attendance record for the selected date does not exist. Please wait for the cron job to create it.' });
-    }
-
-    // Validate current status before updating
-    const currentStatus = attendanceRecord[meal];
-    if (currentStatus === 'delivered') {
-      return res.status(400).json({ message: `Meal ${meal} is already marked as delivered` });
-    }
-
-    // Update the specific meal status to 'delivered'
-    attendanceRecord[meal] = 'delivered';
-
-    // Save the updated order
-    await latestOrder.save();
-
-    res.status(200).json({
-      message: 'Attendance updated successfully',
-      attendance: attendanceRecord,
-    });
-  } catch (error) {
-    // logger.error('Error updating user attendance: %o', error);
-    res.status(500).json({ message: 'Failed to update attendance' });
-  }
-};
-// trashUser==================================================================================================================================================
-const trashUser = async (req, res) => {
-  try {
-    const userId = req.params.id;
-    const user = await User.findById(userId);
-
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    user.isDeleted = true;
-    await user.save();
-    return res.status(200).json({ message: 'User moved to trash' });
-  } catch (error) {
-    console.error('Error trashing user:', error);
-    return res.status(500).json({ message: 'Server error' });
-  }
-};
-
-
-// addLeave
 
 /**
- * Updates the status of an order based on current date, order dates, and leaves.
- * @param {Object} order - The order document to update.
+ * Update Order Status
  */
 const updateOrderStatus = async (order) => {
   const currentDate = stripTime(new Date());
@@ -1690,541 +1854,9 @@ const updateOrderStatus = async (order) => {
 
   await order.save();
 };
-const addLeave = async (req, res) => {
-  const { orderId } = req.params;
-  const { leaveStart, leaveEnd, plan = 'BLD' } = req.body; // Default plan to 'BLD' if not provided
-
-  console.log('Leave Start:', leaveStart);
-  console.log('Leave End:', leaveEnd);
-
-  try {
-    const order = await Order.findById(orderId);
-
-    if (!order) {
-      return res.status(404).json({ message: 'Order not found' });
-    }
-
-    const leaveStartDate = stripTime(new Date(leaveStart));
-    const leaveEndDate = stripTime(new Date(leaveEnd));
-    const orderStartDate = stripTime(new Date(order.orderStart));
-    const orderEndDate = stripTime(new Date(order.orderEnd));
-
-    if (leaveStartDate > leaveEndDate) {
-      return res.status(400).json({ message: 'Leave start date cannot be after the leave end date' });
-    }
-
-    if (leaveStartDate < orderStartDate || leaveEndDate > orderEndDate) {
-      return res.status(400).json({ message: 'Leave dates must be within the order date range' });
-    }
-
-    const differenceInTime = leaveEndDate - leaveStartDate;
-    const differenceInDays = Math.ceil(differenceInTime / (1000 * 60 * 60 * 24));
-    const numberOfLeaves = differenceInDays + 1;
-
-    const totalLeaveDays = order.leave.reduce((acc, leave) => acc + leave.numberOfLeaves, 0) + numberOfLeaves;
-
-    if (totalLeaveDays > 8) {
-      return res.status(400).json({ message: 'Total number of leave days cannot exceed 8 for this order' });
-    }
-
-    const overlappingLeave = order.leave.some(
-      (leave) =>
-        leaveStartDate <= stripTime(new Date(leave.end)) &&
-        leaveEndDate >= stripTime(new Date(leave.start))
-    );
-
-    if (overlappingLeave) {
-      return res.status(400).json({ message: 'The new leave period overlaps with an existing leave' });
-    }
-
-    order.leave.push({
-      start: leaveStartDate,
-      end: leaveEndDate,
-      numberOfLeaves,
-    });
-
-    markLeaveInAttendances(order, leaveStartDate, leaveEndDate, plan); // Pass `plan` to the function
-
-    await updateOrderStatus(order);
-
-    await order.save();
-
-    return res.status(200).json({ message: 'Leave added successfully' });
-  } catch (error) {
-    console.error('Error adding leave:', error);
-    return res.status(500).json({ message: 'Internal server error' });
-  }
-};
-
-const editLeave = async (req, res) => {
-  const { orderId, leaveId } = req.params;
-  const { leaveStart, leaveEnd, plan = 'BLD' } = req.body; // Default plan to 'BLD' if not provided
-
-  if (!mongoose.Types.ObjectId.isValid(orderId)) {
-    return res.status(400).json({ message: 'Invalid order ID' });
-  }
-
-  if (!mongoose.Types.ObjectId.isValid(leaveId)) {
-    return res.status(400).json({ message: 'Invalid leave ID' });
-  }
-
-  try {
-    const order = await Order.findById(orderId);
-
-    if (!order) {
-      return res.status(404).json({ message: 'Order not found' });
-    }
-
-    const leaveToEdit = order.leave.id(leaveId);
-    if (!leaveToEdit) {
-      return res.status(404).json({ message: 'Leave not found' });
-    }
-
-    const oldLeaveStart = stripTime(new Date(leaveToEdit.start));
-    const oldLeaveEnd = stripTime(new Date(leaveToEdit.end));
-
-    const newLeaveStartDate = stripTime(new Date(leaveStart));
-    const newLeaveEndDate = stripTime(new Date(leaveEnd));
-    const orderStartDate = stripTime(new Date(order.orderStart));
-    const orderEndDate = stripTime(new Date(order.orderEnd));
-
-    if (newLeaveStartDate > newLeaveEndDate) {
-      return res.status(400).json({ message: 'Leave start date cannot be after the leave end date' });
-    }
-
-    if (newLeaveStartDate < orderStartDate || newLeaveEndDate > orderEndDate) {
-      return res.status(400).json({ message: 'Leave dates must be within the order date range' });
-    }
-
-    const differenceInTime = newLeaveEndDate - newLeaveStartDate;
-    const differenceInDays = Math.ceil(differenceInTime / (1000 * 60 * 60 * 24));
-    const numberOfLeaves = differenceInDays + 1;
-
-    const totalLeaveDays = order.leave.reduce((acc, leave) => {
-      if (leave._id.toString() === leaveId) return acc;
-      return acc + leave.numberOfLeaves;
-    }, 0) + numberOfLeaves;
-
-    if (totalLeaveDays > 8) {
-      return res.status(400).json({ message: 'Total number of leave days cannot exceed 8 for this order' });
-    }
-
-    const overlappingLeave = order.leave.some((leave) => {
-      if (leave._id.toString() === leaveId) return false;
-      const existingLeaveStart = stripTime(new Date(leave.start));
-      const existingLeaveEnd = stripTime(new Date(leave.end));
-      return newLeaveStartDate <= existingLeaveEnd && newLeaveEndDate >= existingLeaveStart;
-    });
-
-    if (overlappingLeave) {
-      return res.status(400).json({ message: 'The edited leave period overlaps with an existing leave' });
-    }
-
-    // Unmark the old leave period in attendances
-    unmarkLeaveInAttendances(order, oldLeaveStart, oldLeaveEnd, plan); // Pass `plan` explicitly
-
-    // Update the leave details
-    leaveToEdit.start = newLeaveStartDate;
-    leaveToEdit.end = newLeaveEndDate;
-    leaveToEdit.numberOfLeaves = numberOfLeaves;
-
-    // Mark the new leave period in attendances
-    markLeaveInAttendances(order, newLeaveStartDate, newLeaveEndDate, plan); // Pass `plan` to the function
-
-    await updateOrderStatus(order);
-
-    await order.save();
-
-    return res.status(200).json({ message: 'Leave updated successfully' });
-  } catch (error) {
-    console.error('Error editing leave:', error);
-    return res.status(500).json({ message: 'Internal server error' });
-  }
-};
-
-const deleteLeave = async (req, res) => {
-  const { orderId, leaveId } = req.params;
-
-  // Validate ObjectId formats
-  if (!mongoose.Types.ObjectId.isValid(orderId)) {
-    return res.status(400).json({ message: 'Invalid order ID' });
-  }
-
-  if (!mongoose.Types.ObjectId.isValid(leaveId)) {
-    return res.status(400).json({ message: 'Invalid leave ID' });
-  }
-
-  try {
-    const order = await Order.findById(orderId);
-
-    if (!order) {
-      return res.status(404).json({ message: 'Order not found' });
-    }
-
-    // Find the leave to be deleted
-    const leaveToDelete = order.leave.id(leaveId);
-    if (!leaveToDelete) {
-      return res.status(404).json({ message: 'Leave not found' });
-    }
-
-    const leaveStartDate = stripTime(new Date(leaveToDelete.start));
-    const leaveEndDate = stripTime(new Date(leaveToDelete.end));
-
-    // Unmark the leave period in attendances
-    unmarkLeaveInAttendances(order, leaveStartDate, leaveEndDate);
-
-    // Remove the leave from the leave array by ID
-    order.leave.pull({ _id: leaveId });
-
-    // Update the order's status based on the remaining leaves
-    await updateOrderStatus(order);
-
-    // Save the updated order
-    await order.save();
-
-    return res.status(200).json({ message: 'Leave deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting leave:', error);
-    return res.status(500).json({ message: 'Internal server error' });
-  }
-};
-    
-
-
-// add attandance
-const addAttendance = async (req, res) => {
-  
-  const { userId, period } = req.body;
-    
-  const today = new Date().setHours(0, 0, 0, 0);
-  console.log(today);
-  
-  const user = await User.findById(userId);
-  let attendanceRecord = await Attendance.findOne({ userId:user,date: { $gte: today, $lt: new Date(today).setHours(24, 0, 0, 0) } });
-
-  console.log("dasda",attendanceRecord);
-  
-  if (!attendanceRecord) {
-      attendanceRecord = new Attendance({ userId,date:today });
-  }
-
-  if (period === 'morning') {
-      attendanceRecord.morningAttendance = true;
-  } else if (period === 'afternoon') {
-      attendanceRecord.afternoonAttendance = true;
-  } else if (period === 'evening') {
-      attendanceRecord.eveningAttendance = true;
-  } 
-
-  await attendanceRecord.save();
-  res.send({ message: 'Attendance marked', attendance: attendanceRecord });
-};
-
-
-//get attadance status
-
-const getAttendance = async (req,res)=>{
-  const { studentId, date } = req.params;
-  const user = await User.findById(studentId);
-  const today = new Date(date).setHours(0, 0, 0, 0);
-  console.log(today);
-  
-  
-  const attendanceRecord = await Attendance.findOne({ userId:studentId,date: { $gte: today, $lt: new Date(today).setHours(24, 0, 0, 0) } });
-
-
-  if (!attendanceRecord) {
-      return res.status(404).send({ message: 'Attendance record not found' });
-  }
-
-  res.send(attendanceRecord);
-}
-
-
-
-
-// ===========================================location temp
-const location = async (req, res) => {
-  try {
-    console.log('here it is')
-    const { userId } = req.params; // Assuming userId is passed as a route parameter
-    const { latitude, longitude } = req.body; // Extract latitude and longitude from the request body
-
-    // Find the user by their ID and update the location
-    const updatedUser = await User.findByIdAndUpdate(
-      userId,
-      { location: { latitude, longitude } },
-      { new: true } // Return the updated document
-    );
-
-    if (!updatedUser) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    res.status(200).json({
-      message: "Location updated successfully",
-      user: updatedUser,
-    });
-  } catch (error) {
-    console.error("Error updating location:", error);
-    res.status(500).json({ message: "Error updating location" });
-  }
-};
-
-
-
-
-
-
-const renewOrder = async (req, res) => {
-  const userId = req.params.id;
-  const {
-    plan,
-    paymentStatus,
-    startDate,
-    endDate,
-    amount,
-    paymentMethod,
-    paymentId,
-    isVeg,
-  } = req.body;
-
-  try {
-    // Fetch the user
-    const user = await User.findById(userId).populate('orders');
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    // Validate input
-    if (!paymentStatus) {
-      return res.status(400).json({ message: "Payment status is required" });
-    }
-
-    if (!plan || plan.length === 0) {
-      return res.status(400).json({ message: "Plan details are required" });
-    }
-
-    // Validate dates
-    const orderStartDate = stripTime(new Date(startDate));
-    const orderEndDate = stripTime(new Date(endDate));
-    const currentDate = stripTime(new Date());
-
-    if (isNaN(orderStartDate) || isNaN(orderEndDate)) {
-      return res.status(400).json({ message: "Invalid date(s) provided" });
-    }
-
-    if (orderStartDate > orderEndDate) {
-      return res.status(400).json({ message: "Order start date cannot be after end date" });
-    }
-
-    // Determine the status based on the dates
-    let orderStatus = "soon";
-    if (orderStartDate <= currentDate && currentDate <= orderEndDate) {
-      orderStatus = "active";
-    } else if (currentDate > orderEndDate) {
-      orderStatus = "expired";
-    }
-
-    // Check for overlapping with any existing orders
-    const overlappingOrder = user.orders.find(order => {
-      const orderStart = stripTime(new Date(order.orderStart)).getTime();
-      const orderEnd = stripTime(new Date(order.orderEnd)).getTime();
-      return isOverlapping(orderStartDate.getTime(), orderEndDate.getTime(), orderStart, orderEnd);
-    });
-
-    if (overlappingOrder) {
-      return res.status(400).json({ message: "New order dates overlap with an existing order." });
-    }
-
-    // Create a new order
-    const newOrder = new Order({
-      userId: user._id,
-      plan,
-      orderStart: startDate,
-      orderEnd: endDate,
-      leave: [],
-      status: orderStatus,
-      paymentStatus,
-      amount,
-      paymentMethod,
-      paymentId,
-      isVeg,
-    });
-
-    // Initialize attendances
-    initializeAttendances(newOrder, orderStartDate, orderEndDate, plan, isVeg);
-
-    await newOrder.save();
-
-    // Add the new order to the user's orders
-    user.orders.push(newOrder._id);
-
-    await user.save();
-
-    res.status(200).json({ message: 'Order renewed successfully' });
-  } catch (error) {
-    console.error('Error renewing order:', error);
-    res.status(500).json({ message: 'Error renewing order' });
-  }
-}
-
-
-
-
-
-const softDeleteUser = async (req, res) => {
-  const userId = req.params.id;
-
-  try {
-    // Find the user by ID
-    const user = await User.findById(userId);
-
-    // If user not found, return 404 error
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    // Set isDeleted to true
-    user.isDeleted = true;
-
-    // Save the updated user
-    await user.save();
-
-    res.status(200).json({ message: 'User deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting user:', error);
-    res.status(500).json({ message: 'Error deleting user' });
-  }
-}
-
-
-
-const getSoftDeletedUsers = async (req, res) => {
-  try {
-    const deletedUsers = await User.find({ isDeleted: true }).populate('point');
-    res.status(200).json(deletedUsers);
-  } catch (error) {
-    console.error('Error fetching deleted users:', error);
-    res.status(500).json({ message: 'Error fetching deleted users' });
-  }
-}
-
-const restoreDeletedUsers = async (req, res) => {
-  const userId = req.params.id;
-
-  try {
-    // Find the user by ID
-    const user = await User.findById(userId);
-
-    // If user not found or not deleted, return error
-    if (!user || !user.isDeleted) {
-      return res.status(404).json({ message: 'User not found or not deleted' });
-    }
-
-    // Set isDeleted to false
-    user.isDeleted = false;
-
-    // Save the updated user
-    await user.save();
-
-    res.status(200).json({ message: 'User restored successfully' });
-  } catch (error) {
-    console.error('Error restoring user:', error);
-    res.status(500).json({ message: 'Error restoring user' });
-  }
-}
-
-
-const hardDeleteUser = async (req, res) => {
-  const userId = req.params.id;
-
-  try {
-    // Find the user by ID
-    const user = await User.findById(userId);
-
-    // If user not found, return 404 error
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    // Delete associated orders
-    await Order.deleteMany({ userId: user._id });
-
-    // Delete the user
-    await User.findByIdAndDelete(userId);
-
-    res.status(200).json({ message: 'User permanently deleted' });
-  } catch (error) {
-    console.error('Error permanently deleting user:', error);
-    res.status(500).json({ message: 'Error permanently deleting user' });
-  }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// ====================== Node cron=========================================================================================================================
-
-
-const cleanupJunkOrders = async () => {
-  try {
-    // Fetch all user IDs
-    console.log('opopoo')
-    const users = await User.find({}, '_id');
-    const userIds = users.map(user => user._id.toString());
-
-    // Find and delete orders with no corresponding user
-    const result = await Order.deleteMany({
-      userId: { $nin: userIds }
-    });
-
-    console.log(`Deleted ${result.deletedCount} junk orders.`);
-  } catch (err) {
-    console.error('Error cleaning up junk orders:', err);
-  } 
-};
-
-
-const update = async () => {
-  try {
-    // Define default attendance data
-    const defaultAttendance = {
-      date: new Date(),  // You can use a default date or set it to null
-      present: false,    // Default to not present
-      breakfast: false,  // Default to not having breakfast
-      lunch: false,      // Default to not having lunch
-      dinner: false      // Default to not having dinner
-    };
-
-    // Update all user documents that don't have attendance field
-    const result = await User.updateMany(
-      { attendance: { $exists: false } }, // Only update users without attendance field
-      { $set: { attendance: [defaultAttendance] } } // Set the default attendance
-    );
-
-    console.log(`Updated ${result.nModified} users with attendance field.`);
-  } catch (err) {
-    console.error('Error updating users:', err);
-  }
-};
-
-// Schedule the function to run every second (adjust for your needs)
-
-
-
+/**
+ * Update Order Status for All Orders
+ */
 async function updateOrderStatuses() {
   try {
     const orders = await Order.find({}); 
@@ -2259,9 +1891,58 @@ async function updateOrderStatuses() {
   } catch (error) {
     console.error('Error updating order statuses:', error);
   }
-}
+};
 
-// update attendence to the users not having attendence==============================================================
+/**
+ * Add Attendance
+ */
+const addAttendance = async (req, res) => {
+  const { userId, period } = req.body;
+
+  const today = new Date().setHours(0, 0, 0, 0);
+  console.log(today);
+
+  const user = await User.findById(userId);
+  let attendanceRecord = await Attendance.findOne({ userId: user, date: { $gte: today, $lt: new Date(today).setHours(24, 0, 0, 0) } });
+
+  console.log("dasda", attendanceRecord);
+
+  if (!attendanceRecord) {
+    attendanceRecord = new Attendance({ userId, date: today });
+  }
+
+  if (period === 'morning') {
+    attendanceRecord.morningAttendance = true;
+  } else if (period === 'afternoon') {
+    attendanceRecord.afternoonAttendance = true;
+  } else if (period === 'evening') {
+    attendanceRecord.eveningAttendance = true;
+  } 
+
+  await attendanceRecord.save();
+  res.send({ message: 'Attendance marked', attendance: attendanceRecord });
+};
+
+/**
+ * Get Attendance Status
+ */
+const getAttendance = async (req, res) => {
+  const { studentId, date } = req.params;
+  const user = await User.findById(studentId);
+  const today = new Date(date).setHours(0, 0, 0, 0);
+  console.log(today);
+
+  const attendanceRecord = await Attendance.findOne({ userId: studentId, date: { $gte: today, $lt: new Date(today).setHours(24, 0, 0, 0) } });
+
+  if (!attendanceRecord) {
+    return res.status(404).send({ message: 'Attendance record not found' });
+  }
+
+  res.send(attendanceRecord);
+};
+/**
+ * Update Attendances
+ */
 const updateAttendances = async () => {
   try {
     // Find all orders without attendances or with empty attendances
@@ -2345,7 +2026,30 @@ const updateAttendances = async () => {
   }
 };
 
-// update user with deleted points to under a new point=========================================================
+/**
+ * Cleanup Junk Orders
+ */
+const cleanupJunkOrders = async () => {
+  try {
+    // Fetch all user IDs
+    console.log('opopoo');
+    const users = await User.find({}, '_id');
+    const userIds = users.map(user => user._id.toString());
+
+    // Find and delete orders with no corresponding user
+    const result = await Order.deleteMany({
+      userId: { $nin: userIds }
+    });
+
+    console.log(`Deleted ${result.deletedCount} junk orders.`);
+  } catch (err) {
+    console.error('Error cleaning up junk orders:', err);
+  } 
+};
+
+/**
+ * Update Invalid Users' Points
+ */
 const updateInvalidUsersPoints = async (req, res) => {
   try {
     // Define the target valid Point ID
@@ -2400,15 +2104,40 @@ const updateInvalidUsersPoints = async (req, res) => {
     // return res.status(500).json({ message: 'Internal server error.' });
   }
 };
+// ------------------------------------------------------------------------------------------------------------------------------end
 
-// cron.schedule('* * * * * *', updateAttendances);
+// Cron Jobs------------------------------------------------------------------------------------------------------------------------
+const update = async () => {
+  try {
+    // Define default attendance data
+    const defaultAttendance = {
+      date: new Date(),  // You can use a default date or set it to null
+      present: false,    // Default to not present
+      breakfast: false,  // Default to not having breakfast
+      lunch: false,      // Default to not having lunch
+      dinner: false      // Default to not having dinner
+    };
+
+    // Update all user documents that don't have attendance field
+    const result = await User.updateMany(
+      { attendance: { $exists: false } }, // Only update users without attendance field
+      { $set: { attendance: [defaultAttendance] } } // Set the default attendance
+    );
+
+    console.log(`Updated ${result.nModified} users with attendance field.`);
+  } catch (err) {
+    console.error('Error updating users:', err);
+  }
+};
 
 // Schedule the functions to run daily at midnight
 cron.schedule('0 0 * * *', () => {
   console.log('Running daily cron jobs at midnight');
   updateOrderStatuses();
 });
+// ------------------------------------------------------------------------------------------------------------------------------end
 
+// Module Exports-------------------------------------------------------------------------------------------------------------------
 module.exports = {
   login, 
   postUser,
@@ -2416,7 +2145,6 @@ module.exports = {
   getUsers,
   getDailyStatistics,
   editUser,
-  deleteUser,
   trashUser,
   addAttendance,
   getAttendance,
@@ -2436,3 +2164,4 @@ module.exports = {
   restoreDeletedUsers,
   hardDeleteUser
 };
+// ------------------------------------------------------------------------------------------------------------------------------end
