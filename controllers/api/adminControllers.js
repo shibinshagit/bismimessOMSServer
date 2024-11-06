@@ -1111,27 +1111,21 @@ const updateUserAttendance = async (req, res) => {
     console.log(userId, req.body);
 
     // Validate input
-    console.log('here');
     const { error } = Attendance.validate(req.body);
 
     if (error) {
-      console.log('here1');
       return res.status(400).json({ message: error.details[0].message });
     }
-    console.log('here2');
     // Validate User ID
     if (!mongoose.Types.ObjectId.isValid(userId)) {
-      console.log('here4');
       return res.status(400).json({ message: 'Invalid User ID' });
     }
-    console.log('here5');
+
     // Find the User
     const user = await User.findById(userId).populate('orders');
     if (!user) {
-      console.log('here6');
       return res.status(404).json({ message: 'User not found' });
-    }
-    console.log('here8');
+    };
     // Find the latest order
     const latestOrder = user.orders.sort((a, b) => new Date(b.orderStart) - new Date(a.orderStart))[0];
     if (!latestOrder) {
@@ -1191,6 +1185,99 @@ const updateUserAttendance = async (req, res) => {
   } catch (error) {
     // logger.error('Error updating user attendance: %o', error);
     res.status(500).json({ message: 'Failed to update attendance' });
+  }
+};
+/**
+ * Update User Attendance Batch Vise
+ */
+const updateUserAttendanceBatch = async (req, res) => {
+  try {
+    const { changes, date } = req.body; // changes is an array of { userId, meal, newStatus }
+
+    if (!Array.isArray(changes) || changes.length === 0) {
+      return res.status(400).json({ message: 'No changes provided.' });
+    }
+
+    for (const change of changes) {
+      const { userId, meal, newStatus } = change;
+
+      // Validate input
+      const { error } = Attendance.validate({ date, meal, status: newStatus });
+
+      if (error) {
+        return res.status(400).json({ message: error.details[0].message });
+      }
+   
+      // Validate User ID
+      if (!mongoose.Types.ObjectId.isValid(userId)) {
+        return res.status(400).json({ message: `Invalid User ID: ${userId}` });
+      }
+
+      // Find the User
+      const user = await User.findById(userId).populate('orders');
+      if (!user) {
+        return res.status(404).json({ message: `User not found: ${userId}` });
+      }
+
+      // Find the latest order
+      const latestOrder = user.orders.sort((a, b) => new Date(b.orderStart) - new Date(a.orderStart))[0];
+      if (!latestOrder) {
+        return res.status(404).json({ message: `No orders found for user: ${userId}` });
+      }
+
+      // Ensure the latest order is active on the given date
+      const orderStart = stripTime(new Date(latestOrder.orderStart));
+      const orderEnd = stripTime(new Date(latestOrder.orderEnd));
+      const targetDate = stripTime(new Date(date));
+
+      if (targetDate < orderStart || targetDate > orderEnd) {
+        return res.status(400).json({ message: `Date is outside the order period for user: ${userId}` });
+      }
+
+      // Check if the date is a leave day
+      const isLeaveDay = latestOrder.leave.some((leave) => {
+        const leaveStart = stripTime(new Date(leave.start));
+        const leaveEnd = stripTime(new Date(leave.end));
+        return targetDate >= leaveStart && targetDate <= leaveEnd;
+      });
+
+      if (isLeaveDay) {
+        return res.status(400).json({ message: `Cannot mark attendance on leave days for user: ${userId}` });
+      }
+
+      // Initialize attendance if not present for the date
+      if (!latestOrder.attendances) {
+        latestOrder.attendances = [];
+      }
+
+      // Find the attendance record for the selected date
+      let attendanceRecord = latestOrder.attendances.find(
+        (att) => stripTime(att.date).getTime() === targetDate.getTime()
+      );
+
+      if (!attendanceRecord) {
+        return res.status(400).json({ message: `Attendance record for the selected date does not exist for user: ${userId}. Please wait for the cron job to create it.` });
+      }
+
+      // Validate current status before updating
+      const currentStatus = attendanceRecord[meal];
+      if (newStatus === 'delivered' && currentStatus === 'delivered') {
+        return res.status(400).json({ message: `Meal ${meal} is already marked as delivered for user: ${userId}` });
+      }
+
+      // Update the specific meal status
+      attendanceRecord[meal] = newStatus;
+
+      // Save the updated order
+      await latestOrder.save();
+    }
+
+    res.status(200).json({
+      message: 'All attendance updates were successful.',
+    });
+  } catch (error) {
+    console.error('Error updating user attendance batch:', error);
+    res.status(500).json({ message: 'Failed to update attendance batch.' });
   }
 };
 
@@ -2162,6 +2249,7 @@ module.exports = {
   softDeleteUser,
   getSoftDeletedUsers,
   restoreDeletedUsers,
-  hardDeleteUser
+  hardDeleteUser,
+  updateUserAttendanceBatch
 };
 // ------------------------------------------------------------------------------------------------------------------------------end
