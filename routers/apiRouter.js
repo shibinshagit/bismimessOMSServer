@@ -35,6 +35,7 @@ router.post('/users/:id/restore', controllers.restoreDeletedUsers);
 router.put('/editLeave/:orderId/:leaveId', controllers.editLeave);
 router.get('/points/:pointId/users', controllers.getUsersByPointId);
 router.put('/users/:userId/attendance', controllers.updateUserAttendance);
+router.put('/users/attendance/batch', controllers.updateUserAttendanceBatch);
 // ------------------------------------------------------------------------------------------------------------------------------end
 
 // Delete a Leave----------------------------------------------------------------------------------------------------------------
