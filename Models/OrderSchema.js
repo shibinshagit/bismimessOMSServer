@@ -19,6 +19,7 @@ const attendanceSchema = new Schema({
 
 const orderSchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  isBilled: { type: Boolean, default: false },
   plan: {
     type: [String],
     enum: ['B', 'L', 'D'],
@@ -35,7 +36,12 @@ const orderSchema = new Schema({
   ],
   status: {
     type: String,
-    enum: ['active', 'leave', 'expired', 'soon'],
+    enum: ['active', 'leave', 'expired', 'soon', 'pending'],
+    required: true,
+  },
+  paymentStatus: {
+    type: String,
+    enum: ['success', 'failed', 'pending'],
     required: true,
   },
   amount: { type: Number },
@@ -44,8 +50,8 @@ const orderSchema = new Schema({
     enum: ['Cash', 'Bank', 'Online'],
   },
   paymentId: { type: String },
-  isVeg: { type: Boolean, default: false },
-  attendances: [attendanceSchema],  
+  isVeg: { type: Boolean, default: false }, 
+  attendances: [attendanceSchema],
 }, { timestamps: true });
 
 // Pre-save middleware to initialize attendance records based on the plan
@@ -56,6 +62,8 @@ orderSchema.pre('save', function(next) {
     const dayMilliseconds = 24 * 60 * 60 * 1000;
     const attendanceRecords = [];
 
+    const today = stripTime(new Date());
+
     for (let d = new Date(startDate); d <= endDate; d = new Date(d.getTime() + dayMilliseconds)) {
       const attendance = {
         date: new Date(d),
@@ -63,6 +71,16 @@ orderSchema.pre('save', function(next) {
         L: this.plan.includes('L') ? 'packed' : 'NIL',
         D: this.plan.includes('D') ? 'packed' : 'NIL',
       };
+
+      // If the order start date is today or before, mark all days till today as 'delivered'
+      if (startDate <= today && d <= today) {
+        for (const meal of ['B', 'L', 'D']) {
+          if (this.plan.includes(meal)) {
+            attendance[meal] = 'delivered';
+          }
+        }
+      }
+
       attendanceRecords.push(attendance);
     }
 

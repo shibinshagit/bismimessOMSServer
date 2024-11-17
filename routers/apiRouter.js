@@ -6,6 +6,8 @@ const controllers = require('../controllers/api/adminControllers');
 const pointsController = require('../controllers/api/pointsControllers');
 const deliveryBoyController = require('../controllers/api/DeliveryControllers');
 const financeController = require('../controllers/api/financeControllers');
+const CreationController = require('../controllers/api/CreationController')
+const searchController = require('../controllers/api/searchController')
 const appController = require('../controllers/app/userControllers');
 // ------------------------------------------------------------------------------------------------------------------------------end
 
@@ -29,6 +31,7 @@ router.post('/addLeave/:orderId', controllers.addLeave);
 router.get('/pointsWithExpiredUsers', controllers.getPointsWithExpiredUsers);
 router.get('/deleted-users', controllers.getSoftDeletedUsers);
 router.post('/users/:id/restore', controllers.restoreDeletedUsers);
+router.get('/orders/new', controllers.getNewOrders);
 // ------------------------------------------------------------------------------------------------------------------------------end
 
 // Edit Leave-------------------------------------------------------------------------------------------------------------------
@@ -60,6 +63,7 @@ router.delete('/delivery-boys/:id', deliveryBoyController.deleteDeliveryBoy);
 // Order Routes------------------------------------------------------------------------------------------------------------------
 router.post('/postOrder', upload.array('images', 3), controllers.postOrder);
 router.put('/updateUser/:id', upload.array('images', 3), controllers.editUser);
+router.put('/orders/:orderId/bill', controllers.markOrderAsBilled);
 // ------------------------------------------------------------------------------------------------------------------------------end
 
 // Finance Routes----------------------------------------------------------------------------------------------------------------
@@ -67,6 +71,29 @@ router.get('/finance/total-payments', financeController.getTotalPaymentsReceived
 router.get('/finance/pending-payments', financeController.getPendingPayments);
 router.get('/finance/transactions', financeController.getTransactionHistory);
 router.get('/finance/revenue-over-time', financeController.getRevenueOverTime);
+// ------------------------------------------------------------------------------------------------------------------------------end
+// creation Routes----------------------------------------------------------------------------------------------------------------
+router.post('/groups', CreationController.createGroup);
+router.get('/groups', CreationController.getAllGroups);
+router.get('/groupByID', CreationController.getGroupsByPointId);
+router.put('/groups/:id', CreationController.updateGroup);
+router.delete('/groups/:id', CreationController.deleteGroup);
+
+// Bulk Routes
+router.post('/bulks', CreationController.createBulk);
+router.get('/bulks', CreationController.getAllBulks);
+router.put('/bulks/:id', CreationController.updateBulk);
+router.delete('/bulks/:id', CreationController.deleteBulk);
+   
+// Bulk Leave Routes
+router.post('/bulks/:id/addLeave', CreationController.addLeaveToBulkOrder);
+router.put('/bulks/:id/updateLeave', CreationController.updateLeaveInBulkOrder);
+router.delete('/bulks/:id/deleteLeave', CreationController.deleteLeaveFromBulkOrder);
+// ------------------------------------------------------------------------------------------------------------------------------end
+// Search Routes
+router.get('/search', searchController.searchUsers);
+router.get('/suggestions', searchController.getUserSuggestions);
+router.get('/paymentStatus/pending', searchController.getUsersWithPendingPayment);
 // ------------------------------------------------------------------------------------------------------------------------------end
 
 module.exports = router;

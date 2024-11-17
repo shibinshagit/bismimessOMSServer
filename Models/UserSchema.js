@@ -14,7 +14,25 @@ const userSchema = new Schema({
   isDeleted: { type: Boolean, default: false },
   orders: [{ type: Schema.Types.ObjectId, ref: 'Order' }],
   images: [{ type: String }], // Array to store image URLs
+  group: { type: Schema.Types.ObjectId, ref: 'Group' },
 }, { timestamps: true });
+
+
+
+// Define virtual field 'latestOrder'
+userSchema.virtual('latestOrder', {
+  ref: 'Order',
+  localField: '_id',
+  foreignField: 'userId',
+  justOne: true,
+  options: { sort: { orderEnd: -1 } }, // Adjust 'orderEnd' to the correct date field in your Order schema
+});
+
+// Ensure virtual fields are serialized
+userSchema.set('toObject', { virtuals: true });
+userSchema.set('toJSON', { virtuals: true });
+
+
 
 const User = mongoose.model('User', userSchema);
 module.exports = User;

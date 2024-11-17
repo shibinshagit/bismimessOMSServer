@@ -10,7 +10,7 @@ const login = async (req, res) => {
   const { phone } = req.body;
 
   try {
-    let user = await User.findOne({ phone });
+    let user = await User.findOne({ phone });z
 
     if (user) {
       // User exists, generate and update OTP
