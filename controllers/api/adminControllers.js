@@ -11,6 +11,8 @@ const Point = require("../../Models/PointSchema");
 const Order = require("../../Models/OrderSchema");
 const Attendance = require("../../Models/attendanceSchema");
 const fs = require('fs');
+const dotenv = require("dotenv");
+dotenv.config();
 // ------------------------------------------------------------------------------------------------------------------------------end
 
 // Helper Functions----------------------------------------------------------------------------------------------------------------
@@ -178,6 +180,7 @@ const unmarkLeaveInAttendances = (order, startDate, endDate, plan = 'BLD') => {
 };
 
 const initializeAttendances = (order, startDate, endDate, plan, isVeg) => {
+  const today = stripTime(new Date());
   const start = stripTime(startDate);
   const end = stripTime(endDate);
   const dayMilliseconds = 24 * 60 * 60 * 1000;
@@ -190,6 +193,16 @@ const initializeAttendances = (order, startDate, endDate, plan, isVeg) => {
       L: plan.includes('L') ? 'packed' : 'NIL',
       D: plan.includes('D') ? 'packed' : 'NIL',
     };
+
+    // If the order start date is today or before, mark all days till today as 'delivered'
+    if (start <= today && d <= today) {
+      for (const meal of ['B', 'L', 'D']) {
+        if (plan.includes(meal)) {
+          attendance[meal] = 'delivered';
+        }
+      }
+    }
+
     attendanceRecords.push(attendance);
   }
 
@@ -263,7 +276,37 @@ const postUser = async (req, res) => {
     res.status(500).json({ message: "Error adding user" });
   }
 };
+console.log('env:',process.env.GOOGLE_CLIENT_ID);
+const createGoogleContact = async (name, phone, pointName) => {
+  // Set up OAuth2 client with your credentials
+  const oAuth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI
+  );
 
+
+  // Set the refresh token
+  oAuth2Client.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
+
+  const peopleService = google.people({ version: 'v1', auth: oAuth2Client });
+
+  const resource = {
+    names: [{ givenName: `${name} ${pointName}` }],
+    phoneNumbers: [{ value: phone }],
+  };
+
+  try {
+    const response = await peopleService.people.createContact({
+      requestBody: resource,
+    });
+    console.log('Contact created:', response.data);
+  } catch (error) {
+    console.error('Error creating contact:', error);
+  }
+};
+
+// Updated postOrder function
 const postOrder = async (req, res) => {
   try {
     const {
@@ -278,12 +321,19 @@ const postOrder = async (req, res) => {
       paymentMethod,
       paymentId,
       isVeg,
+      group,
     } = req.body;
 
     // Check for existing user by phone number
     const existingUser = await User.findOne({ phone });
     if (existingUser) {
-      return res.status(400).json({ message: 'Phone number already exists' });
+      return res.status(400).json({
+        message: 'Phone number already exists',
+        user: existingUser,
+      });
+    }
+    if (!plan || plan.length === 0) {
+      return res.status(400).json({ message: 'Fill all plan data' });
     }
 
     // Handle image uploads
@@ -297,21 +347,22 @@ const postOrder = async (req, res) => {
       }
     }
 
+    // Get the point name for contact creation
+    const pointData = await Point.findById(point);
+    const pointName = pointData ? pointData.place : '';
+
     // Create new user
     const newUser = new User({
       name,
       phone,
       point,
-      paymentStatus,
+      group,
       images: imageUrls,
     });
 
-    // Handle order creation if payment status is provided
+    // Handle order creation if payment status is 'success' or 'failed'
     if (paymentStatus) {
-      if (!plan || plan.length === 0) {
-        return res.status(400).json({ message: 'Fill all plan data' });
-      }
-
+      console.log('pay:',paymentStatus)
       // Determine order status based on dates
       let orderStatus = "soon";
       const currentDate = stripTime(new Date());
@@ -327,19 +378,22 @@ const postOrder = async (req, res) => {
       }
 
       // Create new order
-      const newOrder = new Order({
-        userId: newUser._id,
-        plan,
-        point,
-        orderStart: startDate,
-        orderEnd: endDate,
-        leave: [],
-        status: orderStatus,
-        amount,
-        paymentMethod,
-        paymentId,
-        isVeg,
-      });
+ const newOrder = new Order({
+  userId: newUser._id,
+  plan,
+  point,
+  group,
+  orderStart: startDate,
+  orderEnd: endDate,
+  leave: [],
+  status: orderStatus,
+  amount,
+  ...(paymentMethod && { paymentMethod }),
+  ...(paymentId && { paymentId }),
+  ...(paymentStatus && { paymentStatus }),
+  isVeg,
+});
+
 
       // Initialize attendances
       initializeAttendances(newOrder, orderStartDate, orderEndDate, plan, isVeg);
@@ -349,6 +403,9 @@ const postOrder = async (req, res) => {
     }
 
     await newUser.save();
+
+    // Save user as contact
+    // await createGoogleContact(name, phone, pointName);
 
     res.status(200).json({
       message: 'User and order added successfully',
@@ -451,6 +508,7 @@ const getUsers = async (req, res) => {
         $project: {
           name: 1,
           phone: 1,
+          group: 1,
           point: 1,
           location: 1,
           paymentStatus: 1,
@@ -459,6 +517,7 @@ const getUsers = async (req, res) => {
             _id: 1,
             plan: 1,
             orderStart: 1,
+            isBilled: 1,
             orderEnd: 1,
             status: 1,
             leave: 1,
@@ -512,6 +571,7 @@ const getUserById = async (req, res) => {
           name: 1,
           phone: 1,
           point: 1,
+          group: 1,
           location: 1,
           paymentStatus: 1,
           startDate: 1,
@@ -718,13 +778,20 @@ const getDailyStatistics = async (req, res) => {
  * Edit User
  */
 const editUser = async (req, res) => {
+  const userId = req.params.id;
+
   try {
-    const { id } = req.params;
+    // Find the user by ID
+    const user = await User.findById(userId).populate('orders');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Update user details
     const {
       name,
       phone,
       point,
-      plan,
       paymentStatus,
       startDate,
       endDate,
@@ -732,143 +799,124 @@ const editUser = async (req, res) => {
       paymentMethod,
       paymentId,
       isVeg,
+      group,
+      plan,
     } = req.body;
+console.log('group:',group)
+    if (name) user.name = name;
+    if (phone) user.phone = phone;
+    if (point) user.point = point;
+    user.group = group || null;
 
-    // Parse arrays from FormData
-    const planArray = typeof plan === 'string' ? [plan] : plan;
-    const imagesToRemove = req.body.imagesToRemove;
-    let imagesToRemoveArray = [];
-
-    if (imagesToRemove) {
-      imagesToRemoveArray = Array.isArray(imagesToRemove) ? imagesToRemove : [imagesToRemove];
-    }
-
-    // Find the user by ID and populate orders
-    const user = await User.findById(id).populate('orders');
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    // Handle image removals
-    if (imagesToRemoveArray.length > 0) {
-      user.images = user.images.filter((url) => !imagesToRemoveArray.includes(url));
-      for (const url of imagesToRemoveArray) {
+    // Handle image updates
+    // Remove images if requested
+    if (req.body.imagesToRemove) {
+      const imagesToRemove = Array.isArray(req.body.imagesToRemove) ? req.body.imagesToRemove : [req.body.imagesToRemove];
+      user.images = user.images.filter(image => !imagesToRemove.includes(image));
+      // Also delete images from cloud storage if needed
+      for (const url of imagesToRemove) {
         const publicId = getPublicIdFromUrl(url);
         if (publicId) {
-          await cloudinary.uploader.destroy(publicId);
-        } else {
-          console.warn(`Invalid URL encountered: ${url}`);
+          try {
+            await cloudinary.uploader.destroy(publicId);
+          } catch (error) {
+            console.error(`Error deleting image ${publicId} from Cloudinary:`, error);
+          }
         }
       }
     }
 
-    // Handle new image uploads
+    // Add new images if uploaded
     if (req.files && req.files.length > 0) {
-      const uploadedImageUrls = [];
       for (const file of req.files) {
         const result = await cloudinary.uploader.upload(file.path, {
           folder: 'dropoff_areas',
         });
-        uploadedImageUrls.push(result.secure_url);
-        fs.unlinkSync(file.path);  // Delete temp file
+        user.images.push(result.secure_url);
       }
-      user.images = [...user.images, ...uploadedImageUrls];
     }
 
-    // Ensure total images do not exceed 3
-    if (user.images.length > 3) {
-      return res.status(400).json({ message: 'You can only have a maximum of 3 images.' });
-    }
+    // Save user updates
+    await user.save();
 
-    // Update user details
-    user.name = name;
-    user.point = point;
-    user.paymentStatus = paymentStatus;
+    // Update the latest order if it exists
+    let latestOrder = await Order.findOne({ userId: user._id }).sort({ createdAt: -1 });
 
-    // Handle phone number change
-    if (user.phone !== phone) {
-      const existingUser = await User.findOne({ phone });
-      if (existingUser) {
-        return res.status(400).json({ message: 'Phone number already exists' });
-      }
-      user.phone = phone;
-    }
+    if (latestOrder) {
+      // Update paymentStatus
+      if (paymentStatus) latestOrder.paymentStatus = paymentStatus;
 
-    // Handle orders if payment status is updated
-    if (paymentStatus) {
-      if (!planArray || planArray.length === 0) {
-        return res.status(400).json({ message: 'Plan details are required' });
-      }
-
-      const orderStartDate = stripTime(new Date(startDate));
-      const orderEndDate = stripTime(new Date(endDate));
-      const currentDate = stripTime(new Date());
-
-      if (isNaN(orderStartDate) || isNaN(orderEndDate)) {
-        return res.status(400).json({ message: 'Invalid date(s) provided' });
-      }
-
-      if (orderStartDate > orderEndDate) {
-        return res.status(400).json({ message: 'Order start date cannot be after end date' });
-      }
-
-      let orderStatus = "soon";
-      if (orderStartDate <= currentDate && currentDate <= orderEndDate) {
-        orderStatus = "active";
-      } else if (currentDate > orderEndDate) {
-        orderStatus = "expired";
-      }
-
-      const latestOrder = user.orders.sort((a, b) => new Date(b.orderStart) - new Date(a.orderStart))[0];
-
-      if (latestOrder && latestOrder.status !== 'expired') {
-        const overlappingOrder = user.orders.find(order => {
-          if (order._id.toString() === latestOrder._id.toString()) return false;
-          const orderStart = stripTime(new Date(order.orderStart)).getTime();
-          const orderEnd = stripTime(new Date(order.orderEnd)).getTime();
-          return isOverlapping(orderStartDate.getTime(), orderEndDate.getTime(), orderStart, orderEnd);
-        });
-
-        if (overlappingOrder) {
-          return res.status(400).json({ message: 'Order dates overlap with an existing order.' });
+      if (paymentStatus === 'success' || paymentStatus === 'failed') {
+        // Ensure orderStart and orderEnd are provided
+        if (!startDate || !endDate) {
+          return res.status(400).json({ message: "orderStart and orderEnd are required when paymentStatus is 'success' or 'failed'." });
         }
 
-        const hasConflictingLeaves = latestOrder.leave.some(leave => {
-          const leaveStart = stripTime(new Date(leave.start));
-          const leaveEnd = stripTime(new Date(leave.end));
-          return leaveStart < orderStartDate || leaveEnd > orderEndDate;
-        });
-
-        if (hasConflictingLeaves) {
-          return res.status(400).json({ message: 'Order has conflicting leaves. Please adjust leaves before updating dates.' });
-        }
-
-        latestOrder.plan = planArray;
+        // Update order details
         latestOrder.orderStart = startDate;
         latestOrder.orderEnd = endDate;
+
+        if (amount) latestOrder.amount = amount;
+        if (paymentMethod) latestOrder.paymentMethod = paymentMethod;
+        if (paymentId) latestOrder.paymentId = paymentId;
+        if (isVeg !== undefined) latestOrder.isVeg = isVeg;
+        if (plan && plan.length > 0) latestOrder.plan = plan;
+
+        // Determine order status
+        let orderStatus = "soon";
+        const currentDate = stripTime(new Date());
+        const orderStartDate = stripTime(new Date(latestOrder.orderStart));
+        const orderEndDate = stripTime(new Date(latestOrder.orderEnd));
+
+        if (!isNaN(orderStartDate) && !isNaN(orderEndDate)) {
+          if (orderStartDate <= currentDate && currentDate <= orderEndDate) {
+            orderStatus = "active";
+          }
+        } else {
+          return res.status(400).json({ message: "Invalid date(s) provided" });
+        }
+
         latestOrder.status = orderStatus;
-        latestOrder.amount = amount;
-        latestOrder.paymentMethod = paymentMethod;
-        latestOrder.paymentId = paymentId;
-        latestOrder.isVeg = isVeg;
 
-        updateAttendancesForNewPlanAndDateRange(latestOrder, orderStartDate, orderEndDate, planArray);
+        // Re-initialize attendances if dates or plan have changed
+        const orderStartDateTime = stripTime(new Date(latestOrder.orderStart));
+        const orderEndDateTime = stripTime(new Date(latestOrder.orderEnd));
+        initializeAttendances(latestOrder, orderStartDateTime, orderEndDateTime, latestOrder.plan, latestOrder.isVeg);
 
-        await latestOrder.save();
-      } else {
-        const overlappingOrder = user.orders.find(order => {
-          const orderStart = stripTime(new Date(order.orderStart)).getTime();
-          const orderEnd = stripTime(new Date(order.orderEnd)).getTime();
-          return isOverlapping(orderStartDate.getTime(), orderEndDate.getTime(), orderStart, orderEnd);
-        });
+      } else if (paymentStatus === 'pending') {
+        // When paymentStatus is 'pending', clear payment-related fields without affecting other fields
+        latestOrder.amount = null;
+        latestOrder.paymentMethod = null;
+        latestOrder.paymentId = null;
+      }
 
-        if (overlappingOrder) {
-          return res.status(400).json({ message: 'New order dates overlap with an existing order.' });
+      await latestOrder.save();
+    } else {
+      // If there is no latestOrder, and paymentStatus is 'success' or 'failed', create a new order
+      if (paymentStatus === 'success' || paymentStatus === 'failed') {
+        // Ensure orderStart and orderEnd are provided
+        if (!startDate || !endDate) {
+          return res.status(400).json({ message: "orderStart and orderEnd are required when paymentStatus is 'success' or 'failed'." });
+        }
+
+        // Determine order status
+        let orderStatus = "soon";
+        const currentDate = stripTime(new Date());
+        const orderStartDate = stripTime(new Date(startDate));
+        const orderEndDate = stripTime(new Date(endDate));
+
+        if (!isNaN(orderStartDate) && !isNaN(orderEndDate)) {
+          if (orderStartDate <= currentDate && currentDate <= orderEndDate) {
+            orderStatus = "active";
+          }
+        } else {
+          return res.status(400).json({ message: "Invalid date(s) provided" });
         }
 
         const newOrder = new Order({
           userId: user._id,
-          plan: planArray,
+          plan,
+          point: user.point,
           orderStart: startDate,
           orderEnd: endDate,
           leave: [],
@@ -876,17 +924,21 @@ const editUser = async (req, res) => {
           amount,
           paymentMethod,
           paymentId,
+          paymentStatus,
           isVeg,
         });
 
-        initializeAttendances(newOrder, orderStartDate, orderEndDate, planArray, isVeg);
+        // Initialize attendances
+        initializeAttendances(newOrder, orderStartDate, orderEndDate, plan, isVeg);
+
         await newOrder.save();
         user.orders.push(newOrder._id);
+        await user.save();
       }
     }
 
-    await user.save();
     res.status(200).json({ message: 'User updated successfully' });
+
   } catch (error) {
     console.error('Error updating user:', error);
     res.status(500).json({ message: 'Error updating user' });
@@ -1501,29 +1553,51 @@ const restoreDeletedUsers = async (req, res) => {
  * Hard Delete User
  */
 const hardDeleteUser = async (req, res) => {
-  const userId = req.params.id;
-
   try {
-    // Find the user by ID
-    const user = await User.findById(userId);
+    const { id } = req.params; // Assuming user ID is passed as a route parameter
 
-    // If user not found, return 404 error
+    // Step 1: Find the user by ID
+    const user = await User.findById(id);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Delete associated orders
+    // Step 2: Delete images from Cloudinary
+    if (user.images && user.images.length > 0) {
+      for (const url of user.images) {
+        const publicId = getPublicIdFromUrl(url);
+        if (publicId) {
+          try {
+            const result = await cloudinary.uploader.destroy(publicId);
+            if (result.result !== 'ok' && result.result !== 'not_found') {
+              console.warn(`Failed to delete image ${publicId} from Cloudinary:`, result);
+            }
+          } catch (error) {
+            console.error(`Error deleting image ${publicId} from Cloudinary:`, error);
+            // Optionally, decide whether to continue or abort the deletion
+          }
+        } else {
+          console.warn(`Could not extract public ID from URL: ${url}`);
+        }
+      }
+    }
+
+    // Step 3: Delete all orders associated with the user
     await Order.deleteMany({ userId: user._id });
 
-    // Delete the user
-    await User.findByIdAndDelete(userId);
+    // Step 4: Delete the user from the database
+    // Using deleteOne() instead of remove()
+    await User.deleteOne({ _id: id });
 
-    return res.status(200).json({ message: 'User permanently deleted' });
+    // Step 5: Respond with a success message
+    res.status(200).json({ message: 'User and associated images deleted successfully' });
+
   } catch (error) {
-    console.error('Error permanently deleting user:', error);
-    res.status(500).json({ message: 'Error permanently deleting user' });
+    console.error('Error deleting user:', error);
+    res.status(500).json({ message: 'Failed to delete user and images' });
   }
 };
+
 // ------------------------------------------------------------------------------------------------------------------------------end
 
 // Points Controller Functions-----------------------------------------------------------------------------------------------
@@ -1656,10 +1730,11 @@ const getPointsWithExpiredUsers = async (req, res) => {
     res.status(500).json({ message: "Failed to fetch points with expired users" });
   }
 };
-
 const getPointsWithStatistics = async (req, res) => {
   try {
-    const today = stripTime(new Date());
+    // Define the start and end of today
+    const todayStart = stripTime(new Date());
+    const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000 - 1); // 23:59:59
 
     const pointsWithStats = await Point.aggregate([
       // 1. Join with Users who are not deleted
@@ -1694,7 +1769,7 @@ const getPointsWithStatistics = async (req, res) => {
       },
       // 2. Unwind users
       { $unwind: '$users' },
-      // 3. Lookup latest order for each user (regardless of status)
+      // 3. Lookup latest order for each user
       {
         $lookup: {
           from: 'orders',
@@ -1702,13 +1777,23 @@ const getPointsWithStatistics = async (req, res) => {
           pipeline: [
             {
               $match: {
-                $expr: {
-                  $eq: ['$userId', '$$userId'],
-                },
+                $expr: { $eq: ['$userId', '$$userId'] },
               },
             },
-            { $sort: { orderEnd: -1 } }, // Sort to get the latest order
+            { $sort: { orderEnd: -1 } }, // Get the latest order by date
             { $limit: 1 },
+            // Project only the needed fields
+            {
+              $project: {
+                _id: 1,
+                orderStart: 1,
+                orderEnd: 1,
+                status: 1,
+                isVeg: 1,
+                plan: 1,
+                leave: 1,
+              },
+            },
           ],
           as: 'latestOrder',
         },
@@ -1717,98 +1802,77 @@ const getPointsWithStatistics = async (req, res) => {
       {
         $addFields: {
           'users.latestOrder': { $arrayElemAt: ['$latestOrder', 0] },
-          // Include isVeg field from latestOrder
-          'users.isVeg': '$users.latestOrder.isVeg',
         },
       },
-      // 5. Add per-user flags with modifications
+      // 5. Add isActiveToday
       {
         $addFields: {
           'users.isActiveToday': {
             $and: [
               { $ne: ['$users.latestOrder', null] },
               { $eq: ['$users.latestOrder.status', 'active'] },
-              { $lte: ['$users.latestOrder.orderStart', today] },
-              { $gte: ['$users.latestOrder.orderEnd', today] },
+              { $lte: ['$users.latestOrder.orderStart', todayEnd] },
+              { $gte: ['$users.latestOrder.orderEnd', todayStart] },
             ],
           },
+        },
+      },
+      // 6. Add isOnLeaveToday
+      {
+        $addFields: {
           'users.isOnLeaveToday': {
-            $and: [
-              { $ne: ['$users.latestOrder', null] },
+            $gt: [
               {
-                $gt: [
-                  {
-                    $size: {
-                      $filter: {
-                        input: { $ifNull: ['$users.latestOrder.leave', []] },
-                        as: 'leave',
-                        cond: {
-                          $and: [
-                            { $lte: ['$$leave.start', today] },
-                            { $gte: ['$$leave.end', today] },
-                          ],
-                        },
-                      },
+                $size: {
+                  $filter: {
+                    input: { $ifNull: ['$users.latestOrder.leave', []] },
+                    as: 'leave',
+                    cond: {
+                      $and: [
+                        { $lte: ['$$leave.start', todayEnd] },
+                        { $gte: ['$$leave.end', todayStart] },
+                      ],
                     },
                   },
-                  0,
-                ],
+                },
               },
+              0,
             ],
           },
+        },
+      },
+      // 7. Add meal fields
+      {
+        $addFields: {
           'users.hasBreakfast': {
-            $and: [
-              { $ne: ['$users.latestOrder', null] },
-              {
-                $in: [
-                  'B',
-                  { $ifNull: ['$users.latestOrder.plan', []] },
-                ],
-              },
-            ],
+            $in: ['B', { $ifNull: ['$users.latestOrder.plan', []] }],
           },
           'users.hasLunch': {
-            $and: [
-              { $ne: ['$users.latestOrder', null] },
-              {
-                $in: [
-                  'L',
-                  { $ifNull: ['$users.latestOrder.plan', []] },
-                ],
-              },
-            ],
+            $in: ['L', { $ifNull: ['$users.latestOrder.plan', []] }],
           },
           'users.hasDinner': {
-            $and: [
-              { $ne: ['$users.latestOrder', null] },
-              {
-                $in: [
-                  'D',
-                  { $ifNull: ['$users.latestOrder.plan', []] },
-                ],
-              },
-            ],
+            $in: ['D', { $ifNull: ['$users.latestOrder.plan', []] }],
           },
+        },
+      },
+      // 8. Add isVegUser
+      {
+        $addFields: {
+          'users.isVegUser': { $eq: ['$users.latestOrder.isVeg', true] },
+        },
+      },
+      // 9. Add isExpired
+      {
+        $addFields: {
           'users.isExpired': {
             $and: [
               { $ne: ['$users.latestOrder', null] },
               { $eq: ['$users.latestOrder.status', 'expired'] },
             ],
           },
-          // New fields for veg users
-          'users.isVegActiveToday': {
-            $and: [
-              { $eq: ['$users.isVeg', true] },
-              { $eq: ['$users.isActiveToday', true] },
-              { $ne: ['$users.isOnLeaveToday', true] },
-            ],
-          },
-          'users.isVegUser': {
-            $eq: ['$users.isVeg', true],
-          },
         },
       },
-      // 6. Group back per point and calculate sums
+      // 10. Group by point and calculate sums
       {
         $group: {
           _id: '$_id',
@@ -1816,53 +1880,112 @@ const getPointsWithStatistics = async (req, res) => {
           mode: { $first: '$mode' },
           totalCustomers: { $sum: 1 },
           totalExpired: {
-            $sum: {
-              $cond: ['$users.isExpired', 1, 0],
-            },
+            $sum: { $cond: ['$users.isExpired', 1, 0] },
           },
           todaysActiveCustomers: {
-            $sum: {
-              $cond: ['$users.isActiveToday', 1, 0],
-            },
+            $sum: { $cond: ['$users.isActiveToday', 1, 0] },
           },
           todaysLeave: {
-            $sum: {
-              $cond: ['$users.isOnLeaveToday', 1, 0],
-            },
+            $sum: { $cond: ['$users.isOnLeaveToday', 1, 0] },
           },
           totalBreakfast: {
-            $sum: {
-              $cond: ['$users.hasBreakfast', 1, 0],
-            },
+            $sum: { $cond: ['$users.hasBreakfast', 1, 0] },
           },
           totalLunch: {
-            $sum: {
-              $cond: ['$users.hasLunch', 1, 0],
-            },
+            $sum: { $cond: ['$users.hasLunch', 1, 0] },
           },
           totalDinner: {
-            $sum: {
-              $cond: ['$users.hasDinner', 1, 0],
-            },
-          },
-          // New fields for veg counts
-          totalVegNeededToday: {
-            $sum: {
-              $cond: ['$users.isVegActiveToday', 1, 0],
-            },
+            $sum: { $cond: ['$users.hasDinner', 1, 0] },
           },
           totalVeg: {
+            $sum: { $cond: ['$users.isVegUser', 1, 0] },
+          },
+          totalVegNeededToday: {
             $sum: {
-              $cond: ['$users.isVegUser', 1, 0],
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$users.isVegUser', true] },
+                    { $eq: ['$users.isActiveToday', true] },
+                    { $eq: ['$users.isOnLeaveToday', false] },
+                  ],
+                },
+                1,
+                0
+              ]
+            },
+          },
+          // **New Fields for Vegetarian Meals Needed Today**
+          vegBreakfastToday: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$users.isVegUser', true] },
+                    { $eq: ['$users.isActiveToday', true] },
+                    { $eq: ['$users.isOnLeaveToday', false] },
+                    { $eq: ['$users.hasBreakfast', true] },
+                  ],
+                },
+                1,
+                0
+              ]
+            },
+          },
+          vegLunchToday: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$users.isVegUser', true] },
+                    { $eq: ['$users.isActiveToday', true] },
+                    { $eq: ['$users.isOnLeaveToday', false] },
+                    { $eq: ['$users.hasLunch', true] },
+                  ],
+                },
+                1,
+                0
+              ]
+            },
+          },
+          vegDinnerToday: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$users.isVegUser', true] },
+                    { $eq: ['$users.isActiveToday', true] },
+                    { $eq: ['$users.isOnLeaveToday', false] },
+                    { $eq: ['$users.hasDinner', true] },
+                  ],
+                },
+                1,
+                0
+              ]
+            },
+          },
+          // **New Field for Veg Users on Leave Today**
+          vegOnLeaveToday: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$users.isVegUser', true] },
+                    { $eq: ['$users.isOnLeaveToday', true] },
+                  ],
+                },
+                1,
+                0
+              ]
             },
           },
         },
       },
-      // 7. Sort points with more total customers first
+      // 11. Sort points by totalCustomers
       {
         $sort: { totalCustomers: -1, place: 1 },
       },
-      // 8. Project required fields
+      // 12. Project required fields
       {
         $project: {
           place: 1,
@@ -1874,8 +1997,12 @@ const getPointsWithStatistics = async (req, res) => {
           totalBreakfast: 1,
           totalLunch: 1,
           totalDinner: 1,
-          totalVegNeededToday: 1,
           totalVeg: 1,
+          totalVegNeededToday: 1,
+          vegBreakfastToday: 1,
+          vegLunchToday: 1,
+          vegDinnerToday: 1,
+          vegOnLeaveToday: 1, // Include the new field in the output
         },
       },
     ]);
@@ -1886,7 +2013,6 @@ const getPointsWithStatistics = async (req, res) => {
     res.status(500).json({ message: 'Failed to fetch points with statistics' });
   }
 };
-
 /**
  * Get Users by Point ID
  */
@@ -2191,6 +2317,117 @@ const updateInvalidUsersPoints = async (req, res) => {
     // return res.status(500).json({ message: 'Internal server error.' });
   }
 };
+const getNewOrders = async (req, res) => {
+  try {
+    const threeDaysAgo = new Date();
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+
+    // Aggregation pipeline to fetch new orders with point names
+    const newOrders = await Order.aggregate([
+      // 1. Match orders created within the last three days
+      {
+        $match: {
+          createdAt: { $gte: threeDaysAgo },
+        },
+      },
+      // 2. Lookup to join with users
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'userId',
+          foreignField: '_id',
+          as: 'user',
+        },
+      },
+      // 3. Unwind the user array
+      {
+        $unwind: '$user',
+      },
+      // 4. Exclude orders where user is deleted or userId is null
+      {
+        $match: {
+          'user.isDeleted': false,
+          'user._id': { $ne: null },
+        },
+      },
+      // 5. Lookup to join with points using user.point
+      {
+        $lookup: {
+          from: 'points',
+          localField: 'user.point',
+          foreignField: '_id',
+          as: 'point',
+        },
+      },
+      // 6. Unwind the point array
+      {
+        $unwind: {
+          path: '$point',
+          preserveNullAndEmptyArrays: true, // In case some users don't have a point
+        },
+      },
+      // 7. Sort orders by creation date descending
+      {
+        $sort: {
+          createdAt: -1,
+        },
+      },
+      // 8. Project necessary fields
+      {
+        $project: {
+          orderId: '$_id', // Use the order's _id as orderId
+          _id: '$user._id',
+          userName: '$user.name',
+          userPhone: '$user.phone',
+          pointName: '$point.place', // Correct field for point name
+          plan: 1,
+          orderStart: 1,
+          orderEnd: 1,
+          status: 1,
+          paymentStatus: 1,
+          paymentMethod: 1,
+          paymentId: 1,
+          isVeg: 1,
+          createdAt: 1,
+        },
+      },
+    ]);
+
+    // Fetch the total number of users joined in the last three days
+    const newUsersCount = await User.countDocuments({
+      createdAt: { $gte: threeDaysAgo },
+      isDeleted: false,
+    });
+
+    res.status(200).json({ newOrders, newUsersCount });
+  } catch (error) {
+    console.error('Error fetching new orders:', error);
+    res.status(500).json({ message: 'Error fetching new orders' });
+  }
+};
+
+const markOrderAsBilled = async (req, res) => {
+  try {
+    const orderId = req.params.orderId;
+
+    // Update the order's isBilled field to true
+    const order = await Order.findByIdAndUpdate(
+      orderId,
+      { isBilled: true },
+      { new: true }
+    );
+
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    res.status(200).json({ message: 'Order marked as billed', order });
+  } catch (error) {
+    console.error('Error marking order as billed:', error);
+    res.status(500).json({ message: 'Server Error' });
+  }
+};
+
 // ------------------------------------------------------------------------------------------------------------------------------end
 
 // Cron Jobs------------------------------------------------------------------------------------------------------------------------
@@ -2250,6 +2487,8 @@ module.exports = {
   getSoftDeletedUsers,
   restoreDeletedUsers,
   hardDeleteUser,
-  updateUserAttendanceBatch
+  updateUserAttendanceBatch,
+  getNewOrders,
+  markOrderAsBilled
 };
 // ------------------------------------------------------------------------------------------------------------------------------end
