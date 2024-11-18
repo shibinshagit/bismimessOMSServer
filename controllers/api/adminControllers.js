@@ -21,7 +21,6 @@ const stripTime = (date) => {
   const utcDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   return utcDate;
 };
-
 /**
  * Helper function to determine if two date ranges overlap
  */
@@ -802,7 +801,7 @@ const editUser = async (req, res) => {
       group,
       plan,
     } = req.body;
-console.log('group:',group)
+console.log('group:',paymentStatus)
     if (name) user.name = name;
     if (phone) user.phone = phone;
     if (point) user.point = point;
@@ -2072,39 +2071,46 @@ const updateOrderStatus = async (order) => {
  */
 async function updateOrderStatuses() {
   try {
-    const orders = await Order.find({}); 
+    const orders = await Order.find({});
     const today = stripTime(new Date());
 
     for (let order of orders) {
-      const orderStart = stripTime(new Date(order.orderStart));
-      const orderEnd = stripTime(new Date(order.orderEnd));
+      try {
+        const orderStart = stripTime(new Date(order.orderStart));
+        const orderEnd = stripTime(new Date(order.orderEnd));
 
-      // Check if the current date is a leave day
-      const isLeaveDay = order.leave.some((leave) => {
-        const leaveStart = stripTime(new Date(leave.start));
-        const leaveEnd = stripTime(new Date(leave.end));
-        return today >= leaveStart && today <= leaveEnd;
-      });
+        // Check if the current date is a leave day
+        const isLeaveDay = order.leave.some((leave) => {
+          const leaveStart = stripTime(new Date(leave.start));
+          const leaveEnd = stripTime(new Date(leave.end));
+          return today >= leaveStart && today <= leaveEnd;
+        });
 
-      if (isLeaveDay) {
-        order.status = 'leave';
-      } else if (today < orderStart) {
-        order.status = 'soon';
-      } else if (today >= orderStart && today <= orderEnd) {
-        order.status = 'active';
-      } else if (today > orderEnd) {
-        order.status = 'expired';
+        if (isLeaveDay) {
+          order.status = 'leave';
+        } else if (today < orderStart) {
+          order.status = 'soon';
+        } else if (today >= orderStart && today <= orderEnd) {
+          order.status = 'active';
+        } else if (today > orderEnd) {
+          order.status = 'expired';
+        }
+
+        // Save the updated order
+        await order.save();
+        console.log(`added paymentStatus for order with ID: ${order._id}`);
+      } catch (orderError) {
+        console.error(`Error processing order with ID ${order._id}:`, orderError);
+        console.error('Problematic order data:', order); // Log the full order for debugging
       }
-
-      // Save the updated order
-      await order.save();
     }
 
     console.log('Order statuses updated successfully');
   } catch (error) {
     console.error('Error updating order statuses:', error);
   }
-};
+}
+
 
 /**
  * Add Attendance
@@ -2454,11 +2460,46 @@ const update = async () => {
   }
 };
 
+
+
+async function removePendingPaymentStatus() {
+  try {
+    // Find all orders with paymentStatus as "Pending"
+    const orders = await Order.find({ paymentStatus: "Pending" });
+
+    if (orders.length === 0) {
+      console.log('No orders with "Pending" paymentStatus found.');
+      return;
+    }
+
+    // Update each order by removing the paymentStatus field
+    for (let order of orders) {
+      try {
+        order.paymentStatus = undefined; // Remove the paymentStatus field
+        await order.save(); // Save the updated order
+        console.log(`Removed paymentStatus for order with ID: ${order._id}`);
+      } catch (orderError) {
+        console.error(`Error removing paymentStatus for order ID ${order._id}:`, orderError);
+      }
+    }
+
+    console.log('All pending payment statuses removed successfully.');
+  } catch (error) {
+    console.error('Error updating payment statuses:', error);
+  }
+}
+
 // Schedule the functions to run daily at midnight
 cron.schedule('0 0 * * *', () => {
   console.log('Running daily cron jobs at midnight');
   updateOrderStatuses();
 });
+
+// cron.schedule('* * * * * *', () => {
+//   console.log('Running task every second');
+//   updateOrderStatuses();
+// });
+
 // ------------------------------------------------------------------------------------------------------------------------------end
 
 // Module Exports-------------------------------------------------------------------------------------------------------------------
