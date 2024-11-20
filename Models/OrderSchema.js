@@ -27,13 +27,19 @@ const orderSchema = new Schema({
   },
   orderStart: { type: Date, required: true },
   orderEnd: { type: Date, required: true },
-  leave: [
-    {
-      start: { type: Date, required: true },
-      end: { type: Date, required: true },
-      numberOfLeaves: { type: Number, required: true, max: 8 },
+ // Remove the 'numberOfLeaves' field from the leave schema
+leave: [
+  {
+    start: { type: Date, required: true },
+    end: { type: Date, required: true },
+    meals: {
+      type: [String],
+      enum: ['B', 'L', 'D'],
+      required: true,
     },
-  ],
+  },
+]
+,
   status: {
     type: String,
     enum: ['active', 'leave', 'expired', 'soon', 'pending'],
@@ -47,7 +53,7 @@ const orderSchema = new Schema({
   amount: { type: Number },
   paymentMethod: {
     type: String,
-    enum: ['Cash', 'Bank', 'Online'],
+    enum: ['Cash', 'Bank', 'Online',''],
   },
   paymentId: { type: String },
   isVeg: { type: Boolean, default: false }, 

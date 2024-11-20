@@ -9,19 +9,23 @@ const financeController = require('../controllers/api/financeControllers');
 const CreationController = require('../controllers/api/CreationController')
 const searchController = require('../controllers/api/searchController')
 const appController = require('../controllers/app/userControllers');
+const orderController = require('../controllers/api/orderController');
 // ------------------------------------------------------------------------------------------------------------------------------end
 
 require('dotenv').config();
 
 router.use(express.json(), express.urlencoded({ extended: true }))
       .use((req, res, next) => { res.locals.session = req.session; next(); });
-
+      router.get('/:userId/orders', orderController.getUserOrders);
+      router.post('/user/:userId/orders', orderController.addOrder);
+      router.put('/orders/:orderId', orderController.editOrder);
+      router.delete('/orders/:orderId', orderController.deleteOrder);
 // User Routes------------------------------------------------------------------------------------------------------------------
 router.put('/user/:userId', controllers.location);
 router.post('/login', controllers.login);
 router.get('/users/:id', controllers.getUsers);
 router.get('/user/:id', controllers.getUserById);
-router.get('/statistics', controllers.getDailyStatistics);
+router.get('/statistics', controllers.getDailyStatistics);  
 router.put('/trashUser/:id', controllers.trashUser);
 router.get('/pointsWithStatistics', controllers.getPointsWithStatistics);
 router.post('/users/:id/renew', controllers.renewOrder);
@@ -94,6 +98,9 @@ router.delete('/bulks/:id/deleteLeave', CreationController.deleteLeaveFromBulkOr
 router.get('/search', searchController.searchUsers);
 router.get('/suggestions', searchController.getUserSuggestions);
 router.get('/paymentStatus/pending', searchController.getUsersWithPendingPayment);
+// ------------------------------------------------------------------------------------------------------------------------------end
+// Search Routes
+
 // ------------------------------------------------------------------------------------------------------------------------------end
 
 module.exports = router;

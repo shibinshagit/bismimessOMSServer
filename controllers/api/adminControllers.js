@@ -116,67 +116,67 @@ const removeAttendancesOutsideNewDateRange = (order, newStartDate, newEndDate) =
   });
 };
 
-const markLeaveInAttendances = (order, startDate, endDate, plan = 'BLD') => {
-  const start = stripTime(new Date(startDate));
-  const end = stripTime(new Date(endDate));
+const markLeaveInAttendances = (order, leave) => {
+  const { start, end, meals } = leave;
+  const startDate = stripTime(new Date(start));
+  const endDate = stripTime(new Date(end));
   const dayMilliseconds = 24 * 60 * 60 * 1000;
 
-  for (let d = start; d <= end; d = new Date(d.getTime() + dayMilliseconds)) {
-    const attTime = stripTime(d).getTime();
-    let existingAttendance = order.attendances.find(
-      att => stripTime(att.date).getTime() === attTime
+  let fullLeaveDays = 0;
+
+  for (let d = startDate; d <= endDate; d = new Date(d.getTime() + dayMilliseconds)) {
+    const attendanceDate = new Date(d);
+    const attendanceRecord = order.attendances.find(
+      (att) => stripTime(att.date).getTime() === stripTime(attendanceDate).getTime()
     );
 
-    if (!existingAttendance) {
-      // Create a new attendance entry
-      existingAttendance = {
-        date: new Date(d),
-        B: 'NIL',
-        L: 'NIL',
-        D: 'NIL',
-      };
-      order.attendances.push(existingAttendance);
-    }
+    if (attendanceRecord) {
+      // Mark specified meals as 'leave'
+      for (const meal of meals) {
+        if (attendanceRecord[meal] !== 'NIL') {
+          attendanceRecord[meal] = 'leave';
+        }
+      }
 
-    // For each meal in the plan, set to 'leave' if not 'NIL'
-    if (plan.includes('B') && existingAttendance.B !== 'NIL') {
-      existingAttendance.B = 'leave';
+      // Check if all meals in plan are on leave for this day
+      const userMeals = order.plan;
+      const isFullLeaveDay = userMeals.every(
+        (meal) => attendanceRecord[meal] === 'leave' || attendanceRecord[meal] === 'NIL'
+      );
+
+      if (isFullLeaveDay) {
+        fullLeaveDays += 1;
+      }
     }
-    if (plan.includes('L') && existingAttendance.L !== 'NIL') {
-      existingAttendance.L = 'leave';
-    }
-    if (plan.includes('D') && existingAttendance.D !== 'NIL') {
-      existingAttendance.D = 'leave';
+  }
+
+  return fullLeaveDays;
+};
+
+
+const unmarkLeaveInAttendances = (order, leave) => {
+  const { start, end, meals } = leave;
+  const startDate = stripTime(new Date(start));
+  const endDate = stripTime(new Date(end));
+  const dayMilliseconds = 24 * 60 * 60 * 1000;
+
+  for (let d = startDate; d <= endDate; d = new Date(d.getTime() + dayMilliseconds)) {
+    const attendanceDate = new Date(d);
+    const attendanceRecord = order.attendances.find(
+      (att) => stripTime(att.date).getTime() === stripTime(attendanceDate).getTime()
+    );
+
+    if (attendanceRecord) {
+      // Unmark specified meals from 'leave' to 'packed' if they are in the plan
+      for (const meal of meals) {
+        if (attendanceRecord[meal] === 'leave' && order.plan.includes(meal)) {
+          attendanceRecord[meal] = 'packed';
+        }
+      }
     }
   }
 };
 
-const unmarkLeaveInAttendances = (order, startDate, endDate, plan = 'BLD') => {
-  const start = stripTime(new Date(startDate));
-  const end = stripTime(new Date(endDate));
-  const dayMilliseconds = 24 * 60 * 60 * 1000;
-
-  for (let d = start; d <= end; d = new Date(d.getTime() + dayMilliseconds)) {
-    const attTime = stripTime(d).getTime();
-    const existingAttendance = order.attendances.find(
-      att => stripTime(att.date).getTime() === attTime
-    );
-
-    if (existingAttendance) {
-      // For each meal in the plan, set to 'packed' if it was 'leave'
-      if (plan.includes('B') && existingAttendance.B === 'leave') {
-        existingAttendance.B = 'packed';
-      }
-      if (plan.includes('L') && existingAttendance.L === 'leave') {
-        existingAttendance.L = 'packed';
-      }
-      if (plan.includes('D') && existingAttendance.D === 'leave') {
-        existingAttendance.D = 'packed';
-      }
-      // Do not change meals that are 'NIL' or any other status
-    }
-  }
-};
 
 const initializeAttendances = (order, startDate, endDate, plan, isVeg) => {
   const today = stripTime(new Date());
@@ -322,7 +322,7 @@ const postOrder = async (req, res) => {
       isVeg,
       group,
     } = req.body;
-
+console.log('plan',plan)
     // Check for existing user by phone number
     const existingUser = await User.findOne({ phone });
     if (existingUser) {
@@ -420,7 +420,7 @@ const getUsers = async (req, res) => {
   try {
     const today = stripTime(new Date());
     const { page = 1, limit = 500, searchTerm = '', filter = '' } = req.query;
-    const { id: pointId } = req.params; // Get the point ID from the route parameters
+    const { id: pointId } = req.params;
 
     // Validate and sanitize pagination parameters
     const MAX_LIMIT = 1000;
@@ -450,50 +450,57 @@ const getUsers = async (req, res) => {
       if (!mongoose.Types.ObjectId.isValid(pointId)) {
         return res.status(400).json({ message: 'Invalid point ID format' });
       }
-      query['point'] = new mongoose.Types.ObjectId(pointId); // Correct instantiation with 'new'
+      query['point'] = new mongoose.Types.ObjectId(pointId);
     }
 
     const users = await User.aggregate([
-      // Match stage to exclude deleted users early in the pipeline
-      {
-        $match: {
-          isDeleted: false, // Exclude deleted users
-        },
-      },
-      // Lookup to join orders and get the latest order
+      // Match stage to exclude deleted users
+      { $match: { isDeleted: false } },
+      // Lookup to join orders and get the latest order, prioritizing active orders
       {
         $lookup: {
           from: 'orders',
           let: { userOrders: '$orders' },
           pipeline: [
-            { $match: { $expr: { $in: ['$_id', '$$userOrders'] } } },
-            { $sort: { orderStart: -1 } }, // Sort orders by orderStart descending
-            { $limit: 1 }, // Get the latest order
+            {
+              $match: {
+                $expr: {
+                  $in: ['$_id', '$$userOrders'],
+                },
+              },
+            },
+            // Add a field to indicate if the order is active today
+            {
+              $addFields: {
+                isActiveOrder: {
+                  $cond: {
+                    if: {
+                      $and: [
+                        { $in: ['$status', ['active', 'leave']] },
+                        { $lte: ['$orderStart', today] },
+                        { $gte: ['$orderEnd', today] },
+                      ],
+                    },
+                    then: 1,
+                    else: 0,
+                  },
+                },
+              },
+            },
+            // Sort by isActiveOrder descending and orderStart descending
+            {
+              $sort: { isActiveOrder: -1, orderStart: -1 },
+            },
+            { $limit: 1 },
           ],
           as: 'latestOrder',
         },
       },
       // Unwind the latestOrder array
       { $unwind: { path: '$latestOrder', preserveNullAndEmptyArrays: true } },
-      // Add isPastOrder field based on latestOrder.orderEnd
-      {
-        $addFields: {
-          isPastOrder: {
-            $cond: {
-              if: { $lt: ['$latestOrder.orderEnd', today] }, // Check if latestOrder.orderEnd is less than today
-              then: 1,
-              else: 0,
-            },
-          },
-        },
-      },
       // Apply filters
       {
         $match: query,
-      },
-      // Sort by isPastOrder descending to prioritize active orders and then by latest order start date
-      {
-        $sort: { isPastOrder: -1, 'latestOrder.orderStart': -1 },
       },
       // Pagination: skip and limit
       {
@@ -520,10 +527,8 @@ const getUsers = async (req, res) => {
             orderEnd: 1,
             status: 1,
             leave: 1,
-            // Exclude 'attendances' field
+            // Exclude 'attendances' field if not needed
           },
-          // Optionally include isPastOrder if needed
-          // isPastOrder: 1,
         },
       },
     ]);
@@ -535,36 +540,62 @@ const getUsers = async (req, res) => {
   }
 };
 
+
 /**
  * Get user by ID
  */
 const getUserById = async (req, res) => {
   try {
-    const { id } = req.params;  // Get the user ID from the route parameters
+    const { id } = req.params;
 
     if (!id) {
       return res.status(400).json({ message: "User ID is required" });
     }
 
+    const today = stripTime(new Date());
+
     const user = await User.aggregate([
-      {
-        $match: { _id: new mongoose.Types.ObjectId(id) }  // Match the user with the given ID
-      },
+      { $match: { _id: new mongoose.Types.ObjectId(id) } },
       {
         $lookup: {
-          from: "orders",
-          localField: "orders",
-          foreignField: "_id",
-          as: "orders",
+          from: 'orders',
+          let: { userOrders: '$orders' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $in: ['$_id', '$$userOrders'],
+                },
+              },
+            },
+            // Add a field to indicate if the order is active today
+            {
+              $addFields: {
+                isActiveOrder: {
+                  $cond: {
+                    if: {
+                      $and: [
+                        { $in: ['$status', ['active', 'leave']] },
+                        { $lte: ['$orderStart', today] },
+                        { $gte: ['$orderEnd', today] },
+                      ],
+                    },
+                    then: 1,
+                    else: 0,
+                  },
+                },
+              },
+            },
+            // Sort by isActiveOrder descending and orderStart descending
+            {
+              $sort: { isActiveOrder: -1, orderStart: -1 },
+            },
+            { $limit: 1 },
+          ],
+          as: 'latestOrder',
         },
       },
-      {
-        $addFields: {
-          latestOrder: {
-            $arrayElemAt: ["$orders", -1],  // Get the last order in the orders array
-          },
-        },
-      },
+      { $addFields: { latestOrder: { $arrayElemAt: ['$latestOrder', 0] } } },
       {
         $project: {
           name: 1,
@@ -574,8 +605,8 @@ const getUserById = async (req, res) => {
           location: 1,
           paymentStatus: 1,
           startDate: 1,
-          images: 1,              // Include images in the response
-          latestOrder: 1,         // Return the latest order details
+          images: 1,
+          latestOrder: 1,
         },
       },
     ]);
@@ -584,7 +615,7 @@ const getUserById = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    res.status(200).json(user[0]);  // Return the first item in the array since the aggregation returns an array
+    res.status(200).json(user[0]);
   } catch (error) {
     console.error("Error fetching user by ID:", error);
     res.status(500).json({ message: "Failed to fetch user" });
@@ -801,7 +832,7 @@ const editUser = async (req, res) => {
       group,
       plan,
     } = req.body;
-console.log('group:',paymentStatus)
+
     if (name) user.name = name;
     if (phone) user.phone = phone;
     if (point) user.point = point;
@@ -838,14 +869,22 @@ console.log('group:',paymentStatus)
     // Save user updates
     await user.save();
 
+    const today = stripTime(new Date());
+
     // Update the latest order if it exists
-    let latestOrder = await Order.findOne({ userId: user._id }).sort({ createdAt: -1 });
+    let latestOrder = await Order.findOne({
+      userId: user._id,
+      status: { $in: ['active', 'leave'] },
+      orderStart: { $lte: today },
+      orderEnd: { $gte: today },
+    }).sort({ orderStart: -1 });
 
     if (latestOrder) {
+      console.log('groups:',latestOrder)
       // Update paymentStatus
       if (paymentStatus) latestOrder.paymentStatus = paymentStatus;
 
-      if (paymentStatus === 'success' || paymentStatus === 'failed') {
+   
         // Ensure orderStart and orderEnd are provided
         if (!startDate || !endDate) {
           return res.status(400).json({ message: "orderStart and orderEnd are required when paymentStatus is 'success' or 'failed'." });
@@ -882,17 +921,10 @@ console.log('group:',paymentStatus)
         const orderEndDateTime = stripTime(new Date(latestOrder.orderEnd));
         initializeAttendances(latestOrder, orderStartDateTime, orderEndDateTime, latestOrder.plan, latestOrder.isVeg);
 
-      } else if (paymentStatus === 'pending') {
-        // When paymentStatus is 'pending', clear payment-related fields without affecting other fields
-        latestOrder.amount = null;
-        latestOrder.paymentMethod = null;
-        latestOrder.paymentId = null;
-      }
 
       await latestOrder.save();
     } else {
-      // If there is no latestOrder, and paymentStatus is 'success' or 'failed', create a new order
-      if (paymentStatus === 'success' || paymentStatus === 'failed') {
+     
         // Ensure orderStart and orderEnd are provided
         if (!startDate || !endDate) {
           return res.status(400).json({ message: "orderStart and orderEnd are required when paymentStatus is 'success' or 'failed'." });
@@ -933,7 +965,7 @@ console.log('group:',paymentStatus)
         await newOrder.save();
         user.orders.push(newOrder._id);
         await user.save();
-      }
+      
     }
 
     res.status(200).json({ message: 'User updated successfully' });
@@ -949,158 +981,163 @@ console.log('group:',paymentStatus)
  */
 const addLeave = async (req, res) => {
   const { orderId } = req.params;
-  const { leaveStart, leaveEnd, plan = 'BLD' } = req.body; // Default plan to 'BLD' if not provided
+  const { leaveStart, leaveEnd, meals } = req.body;
 
-  console.log('Leave Start:', leaveStart);
-  console.log('Leave End:', leaveEnd);
+  if (!Array.isArray(meals) || meals.length === 0) {
+    return res.status(400).json({ message: 'Meals are required' });
+  }
 
   try {
     const order = await Order.findById(orderId);
-
     if (!order) {
       return res.status(404).json({ message: 'Order not found' });
     }
 
     const leaveStartDate = stripTime(new Date(leaveStart));
     const leaveEndDate = stripTime(new Date(leaveEnd));
-    const orderStartDate = stripTime(new Date(order.orderStart));
-    const orderEndDate = stripTime(new Date(order.orderEnd));
+
+    // Validate dates
+    if (isNaN(leaveStartDate) || isNaN(leaveEndDate)) {
+      return res.status(400).json({ message: 'Invalid date(s) provided' });
+    }
 
     if (leaveStartDate > leaveEndDate) {
-      return res.status(400).json({ message: 'Leave start date cannot be after the leave end date' });
+      return res.status(400).json({ message: 'Leave start date cannot be after end date' });
     }
 
-    if (leaveStartDate < orderStartDate || leaveEndDate > orderEndDate) {
-      return res.status(400).json({ message: 'Leave dates must be within the order date range' });
+    // Ensure leave is within order period
+    const orderStart = stripTime(new Date(order.orderStart));
+    const orderEnd = stripTime(new Date(order.orderEnd));
+
+    if (leaveStartDate < orderStart || leaveEndDate > orderEnd) {
+      return res.status(400).json({ message: 'Leave dates must be within the order period' });
     }
 
-    const differenceInTime = leaveEndDate - leaveStartDate;
-    const differenceInDays = Math.ceil(differenceInTime / (1000 * 60 * 60 * 24));
-    const numberOfLeaves = differenceInDays + 1;
+    // Check for overlapping leaves
+    const overlappingLeave = order.leave.some((existingLeave) => {
+      const existingStart = stripTime(new Date(existingLeave.start));
+      const existingEnd = stripTime(new Date(existingLeave.end));
 
-    const totalLeaveDays = order.leave.reduce((acc, leave) => acc + leave.numberOfLeaves, 0) + numberOfLeaves;
-
-    if (totalLeaveDays > 8) {
-      return res.status(400).json({ message: 'Total number of leave days cannot exceed 8 for this order' });
-    }
-
-    const overlappingLeave = order.leave.some(
-      (leave) =>
-        leaveStartDate <= stripTime(new Date(leave.end)) &&
-        leaveEndDate >= stripTime(new Date(leave.start))
-    );
-
-    if (overlappingLeave) {
-      return res.status(400).json({ message: 'The new leave period overlaps with an existing leave' });
-    }
-
-    order.leave.push({
-      start: leaveStartDate,
-      end: leaveEndDate,
-      numberOfLeaves,
+      return (
+        (leaveStartDate <= existingEnd && leaveEndDate >= existingStart) &&
+        existingLeave.meals.some((meal) => meals.includes(meal))
+      );
     });
 
-    markLeaveInAttendances(order, leaveStartDate, leaveEndDate, plan); // Pass `plan` to the function
+    if (overlappingLeave) {
+      return res.status(400).json({ message: 'Leave dates overlap with existing leave' });
+    }
 
-    await updateOrderStatus(order);
+    // Add the leave
+    const newLeave = {
+      start: leaveStartDate,
+      end: leaveEndDate,
+      meals,
+    };
+
+    // Mark leave in attendances and calculate number of full leave days
+    const numberOfLeaves = markLeaveInAttendances(order, newLeave);
+
+    // Store the number of full leave days in the leave object
+    newLeave.numberOfLeaves = numberOfLeaves;
+
+    order.leave.push(newLeave);
 
     await order.save();
-
-    return res.status(200).json({ message: 'Leave added successfully' });
+    await updateOrderStatus(order);
+    res.status(200).json({ message: 'Leave added successfully' });
   } catch (error) {
     console.error('Error adding leave:', error);
-    return res.status(500).json({ message: 'Internal server error' });
+    res.status(500).json({ message: 'Error adding leave' });
   }
 };
+
 
 /**
  * Edit Leave
  */
+/**
+ * Edit an existing leave
+ */
 const editLeave = async (req, res) => {
   const { orderId, leaveId } = req.params;
-  const { leaveStart, leaveEnd, plan = 'BLD' } = req.body; // Default plan to 'BLD' if not provided
+  const { leaveStart, leaveEnd, meals } = req.body;
 
-  if (!mongoose.Types.ObjectId.isValid(orderId)) {
-    return res.status(400).json({ message: 'Invalid order ID' });
-  }
-
-  if (!mongoose.Types.ObjectId.isValid(leaveId)) {
-    return res.status(400).json({ message: 'Invalid leave ID' });
+  if (!Array.isArray(meals) || meals.length === 0) {
+    return res.status(400).json({ message: 'Meals are required' });
   }
 
   try {
     const order = await Order.findById(orderId);
-
     if (!order) {
       return res.status(404).json({ message: 'Order not found' });
     }
 
-    const leaveToEdit = order.leave.id(leaveId);
-    if (!leaveToEdit) {
+    const leave = order.leave.id(leaveId);
+    if (!leave) {
       return res.status(404).json({ message: 'Leave not found' });
     }
 
-    const oldLeaveStart = stripTime(new Date(leaveToEdit.start));
-    const oldLeaveEnd = stripTime(new Date(leaveToEdit.end));
+    // Unmark previous leave in attendances
+    unmarkLeaveInAttendances(order, leave);
 
-    const newLeaveStartDate = stripTime(new Date(leaveStart));
-    const newLeaveEndDate = stripTime(new Date(leaveEnd));
-    const orderStartDate = stripTime(new Date(order.orderStart));
-    const orderEndDate = stripTime(new Date(order.orderEnd));
+    // Update leave details
+    leave.start = stripTime(new Date(leaveStart));
+    leave.end = stripTime(new Date(leaveEnd));
+    leave.meals = meals;
 
-    if (newLeaveStartDate > newLeaveEndDate) {
-      return res.status(400).json({ message: 'Leave start date cannot be after the leave end date' });
+    // Validate dates
+    const leaveStartDate = stripTime(new Date(leaveStart));
+    const leaveEndDate = stripTime(new Date(leaveEnd));
+
+    if (isNaN(leaveStartDate) || isNaN(leaveEndDate)) {
+      return res.status(400).json({ message: 'Invalid date(s) provided' });
     }
 
-    if (newLeaveStartDate < orderStartDate || newLeaveEndDate > orderEndDate) {
-      return res.status(400).json({ message: 'Leave dates must be within the order date range' });
+    if (leaveStartDate > leaveEndDate) {
+      return res.status(400).json({ message: 'Leave start date cannot be after end date' });
     }
 
-    const differenceInTime = newLeaveEndDate - newLeaveStartDate;
-    const differenceInDays = Math.ceil(differenceInTime / (1000 * 60 * 60 * 24));
-    const numberOfLeaves = differenceInDays + 1;
+    // Ensure leave is within order period
+    const orderStart = stripTime(new Date(order.orderStart));
+    const orderEnd = stripTime(new Date(order.orderEnd));
 
-    const totalLeaveDays = order.leave.reduce((acc, leave) => {
-      if (leave._id.toString() === leaveId) return acc;
-      return acc + leave.numberOfLeaves;
-    }, 0) + numberOfLeaves;
-
-    if (totalLeaveDays > 8) {
-      return res.status(400).json({ message: 'Total number of leave days cannot exceed 8 for this order' });
+    if (leaveStartDate < orderStart || leaveEndDate > orderEnd) {
+      return res.status(400).json({ message: 'Leave dates must be within the order period' });
     }
 
-    const overlappingLeave = order.leave.some((leave) => {
-      if (leave._id.toString() === leaveId) return false;
-      const existingLeaveStart = stripTime(new Date(leave.start));
-      const existingLeaveEnd = stripTime(new Date(leave.end));
-      return newLeaveStartDate <= existingLeaveEnd && newLeaveEndDate >= existingLeaveStart;
+    // Check for overlapping leaves (excluding the current leave)
+    const overlappingLeave = order.leave.some((existingLeave) => {
+      if (existingLeave._id.equals(leaveId)) {
+        return false;
+      }
+      const existingStart = stripTime(new Date(existingLeave.start));
+      const existingEnd = stripTime(new Date(existingLeave.end));
+
+      return (
+        (leaveStartDate <= existingEnd && leaveEndDate >= existingStart) &&
+        existingLeave.meals.some((meal) => meals.includes(meal))
+      );
     });
 
     if (overlappingLeave) {
-      return res.status(400).json({ message: 'The edited leave period overlaps with an existing leave' });
+      return res.status(400).json({ message: 'Leave dates overlap with existing leave' });
     }
 
-    // Unmark the old leave period in attendances
-    unmarkLeaveInAttendances(order, oldLeaveStart, oldLeaveEnd, plan); // Pass `plan` explicitly
-
-    // Update the leave details
-    leaveToEdit.start = newLeaveStartDate;
-    leaveToEdit.end = newLeaveEndDate;
-    leaveToEdit.numberOfLeaves = numberOfLeaves;
-
-    // Mark the new leave period in attendances
-    markLeaveInAttendances(order, newLeaveStartDate, newLeaveEndDate, plan); // Pass `plan` to the function
-
-    await updateOrderStatus(order);
+    // Mark new leave in attendances and calculate number of full leave days
+    const numberOfLeaves = markLeaveInAttendances(order, leave);
+    leave.numberOfLeaves = numberOfLeaves;
 
     await order.save();
-
-    return res.status(200).json({ message: 'Leave updated successfully' });
+    await updateOrderStatus(order);
+    res.status(200).json({ message: 'Leave updated successfully' });
   } catch (error) {
-    console.error('Error editing leave:', error);
-    return res.status(500).json({ message: 'Internal server error' });
+    console.error('Error updating leave:', error);
+    res.status(500).json({ message: 'Error updating leave' });
   }
 };
+
+
 
 /**
  * Delete Leave
@@ -1108,49 +1145,31 @@ const editLeave = async (req, res) => {
 const deleteLeave = async (req, res) => {
   const { orderId, leaveId } = req.params;
 
-  // Validate ObjectId formats
-  if (!mongoose.Types.ObjectId.isValid(orderId)) {
-    return res.status(400).json({ message: 'Invalid order ID' });
-  }
-
-  if (!mongoose.Types.ObjectId.isValid(leaveId)) {
-    return res.status(400).json({ message: 'Invalid leave ID' });
-  }
-
   try {
     const order = await Order.findById(orderId);
-
     if (!order) {
       return res.status(404).json({ message: 'Order not found' });
     }
 
-    // Find the leave to be deleted
-    const leaveToDelete = order.leave.id(leaveId);
-    if (!leaveToDelete) {
+    const leave = order.leave.id(leaveId);
+    if (!leave) {
       return res.status(404).json({ message: 'Leave not found' });
     }
 
-    const leaveStartDate = stripTime(new Date(leaveToDelete.start));
-    const leaveEndDate = stripTime(new Date(leaveToDelete.end));
+    // Unmark leave in attendances
+    unmarkLeaveInAttendances(order, leave);
 
-    // Unmark the leave period in attendances
-    unmarkLeaveInAttendances(order, leaveStartDate, leaveEndDate);
+   order.leave.pull({ _id: leaveId });
 
-    // Remove the leave from the leave array by ID
-    order.leave.pull({ _id: leaveId });
-
-    // Update the order's status based on the remaining leaves
-    await updateOrderStatus(order);
-
-    // Save the updated order
     await order.save();
-
-    return res.status(200).json({ message: 'Leave deleted successfully' });
+    await updateOrderStatus(order);
+    res.status(200).json({ message: 'Leave deleted successfully' });
   } catch (error) {
     console.error('Error deleting leave:', error);
-    return res.status(500).json({ message: 'Internal server error' });
+    res.status(500).json({ message: 'Error deleting leave' });
   }
 };
+
 
 /**
  * Update User Attendance
@@ -1172,24 +1191,25 @@ const updateUserAttendance = async (req, res) => {
       return res.status(400).json({ message: 'Invalid User ID' });
     }
 
+  
     // Find the User
-    const user = await User.findById(userId).populate('orders');
+    const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
-    };
-    // Find the latest order
-    const latestOrder = user.orders.sort((a, b) => new Date(b.orderStart) - new Date(a.orderStart))[0];
-    if (!latestOrder) {
-      return res.status(404).json({ message: 'No orders found for user' });
     }
 
-    // Ensure the latest order is active on the given date
-    const orderStart = stripTime(new Date(latestOrder.orderStart));
-    const orderEnd = stripTime(new Date(latestOrder.orderEnd));
     const targetDate = stripTime(new Date(date));
 
-    if (targetDate < orderStart || targetDate > orderEnd) {
-      return res.status(400).json({ message: 'Date is outside the order period' });
+    // Find the active order for the given date
+    const latestOrder = await Order.findOne({
+      userId: user._id,
+      status: { $in: ['active', 'leave'] },
+      orderStart: { $lte: targetDate },
+      orderEnd: { $gte: targetDate },
+    });
+
+    if (!latestOrder) {
+      return res.status(404).json({ message: 'No active order found for the given date' });
     }
 
     // Check if the date is a leave day
@@ -1263,23 +1283,30 @@ const updateUserAttendanceBatch = async (req, res) => {
       if (!mongoose.Types.ObjectId.isValid(userId)) {
         return res.status(400).json({ message: `Invalid User ID: ${userId}` });
       }
+  // Find the User
+  const user = await User.findById(userId);
+  if (!user) {
+    return res.status(404).json({ message: `User not found: ${userId}` });
+  }
 
-      // Find the User
-      const user = await User.findById(userId).populate('orders');
-      if (!user) {
-        return res.status(404).json({ message: `User not found: ${userId}` });
-      }
+  const targetDate = stripTime(new Date(date));
 
-      // Find the latest order
-      const latestOrder = user.orders.sort((a, b) => new Date(b.orderStart) - new Date(a.orderStart))[0];
-      if (!latestOrder) {
-        return res.status(404).json({ message: `No orders found for user: ${userId}` });
-      }
+  // Find the active order for the given date
+  const latestOrder = await Order.findOne({
+    userId: user._id,
+    status: { $in: ['active', 'leave'] },
+    orderStart: { $lte: targetDate },
+    orderEnd: { $gte: targetDate },
+  });
+
+  if (!latestOrder) {
+    return res.status(404).json({ message: `No active order found for user: ${userId} on date: ${date}` });
+  }
 
       // Ensure the latest order is active on the given date
       const orderStart = stripTime(new Date(latestOrder.orderStart));
       const orderEnd = stripTime(new Date(latestOrder.orderEnd));
-      const targetDate = stripTime(new Date(date));
+  
 
       if (targetDate < orderStart || targetDate > orderEnd) {
         return res.status(400).json({ message: `Date is outside the order period for user: ${userId}` });
