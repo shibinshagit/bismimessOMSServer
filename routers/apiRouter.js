@@ -41,8 +41,9 @@ router.get('/orders/new', controllers.getNewOrders);
 // Edit Leave-------------------------------------------------------------------------------------------------------------------
 router.put('/editLeave/:orderId/:leaveId', controllers.editLeave);
 router.get('/points/:pointId/users', controllers.getUsersByPointId);
-router.put('/users/:userId/attendance', controllers.updateUserAttendance);
-router.put('/users/attendance/batch', controllers.updateUserAttendanceBatch);
+// router.put('/users/:userId/attendance', controllers.updateUserAttendance);
+// router.put('/users/attendance/batch', controllers.updateUserAttendanceBatch);
+router.put('/users/attendanceApp', controllers.updateUserAttendanceApp);
 // ------------------------------------------------------------------------------------------------------------------------------end
 
 // Delete a Leave----------------------------------------------------------------------------------------------------------------

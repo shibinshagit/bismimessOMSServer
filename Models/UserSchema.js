@@ -2,10 +2,10 @@ const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
 const userSchema = new Schema({
-  name: { type: String, required: true },
+  name: { type: String, },
   phone: { type: String, required: true, unique: true },
   email: { type: String },
-  point: { type: Schema.Types.ObjectId, ref: 'Point', required: true },
+  point: { type: Schema.Types.ObjectId, ref: 'Point',  },
   location: {
     latitude: { type: Number },
     longitude: { type: Number }
@@ -15,6 +15,7 @@ const userSchema = new Schema({
   orders: [{ type: Schema.Types.ObjectId, ref: 'Order' }],
   images: [{ type: String }], // Array to store image URLs
   group: { type: Schema.Types.ObjectId, ref: 'Group' },
+  usingApp: { type: Boolean, default: false }, 
 }, { timestamps: true });
 
 
