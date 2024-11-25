@@ -546,8 +546,9 @@ const getUsers = async (req, res) => {
  */
 const getUserById = async (req, res) => {
   try {
+ 
     const { id } = req.params;
-
+    
     if (!id) {
       return res.status(400).json({ message: "User ID is required" });
     }
@@ -614,7 +615,7 @@ const getUserById = async (req, res) => {
     if (!user || user.length === 0) {
       return res.status(404).json({ message: "User not found" });
     }
-
+console.log('in the admin:',user[0])
     res.status(200).json(user[0]);
   } catch (error) {
     console.error("Error fetching user by ID:", error);
@@ -982,6 +983,7 @@ const editUser = async (req, res) => {
 const addLeave = async (req, res) => {
   const { orderId } = req.params;
   const { leaveStart, leaveEnd, meals } = req.body;
+  console.log(req.body)
 
   if (!Array.isArray(meals) || meals.length === 0) {
     return res.status(400).json({ message: 'Meals are required' });
@@ -1174,20 +1176,22 @@ const deleteLeave = async (req, res) => {
 /**
  * Update User Attendance
  */
-const updateUserAttendance = async (req, res) => {
+const updateUserAttendanceApp = async (req, res) => {
   try {
-    const { userId } = req.params;
-    const { date, meal } = req.body;
+    const { d } = req.params;
+    const { userId, date, meal } = req.body;
     console.log(userId, req.body);
 
     // Validate input
     const { error } = Attendance.validate(req.body);
 
     if (error) {
+      console.log(error);
       return res.status(400).json({ message: error.details[0].message });
     }
     // Validate User ID
     if (!mongoose.Types.ObjectId.isValid(userId)) {
+      console.log('tything')
       return res.status(400).json({ message: 'Invalid User ID' });
     }
 
@@ -1220,6 +1224,7 @@ const updateUserAttendance = async (req, res) => {
     });
 
     if (isLeaveDay) {
+      console.log('jhdsjfh')
       return res.status(400).json({ message: 'Cannot mark attendance on leave days' });
     }
 
@@ -1234,12 +1239,14 @@ const updateUserAttendance = async (req, res) => {
     );
 
     if (!attendanceRecord) {
+      console.log('jdjf')
       return res.status(400).json({ message: 'Attendance record for the selected date does not exist. Please wait for the cron job to create it.' });
     }
 
     // Validate current status before updating
     const currentStatus = attendanceRecord[meal];
     if (currentStatus === 'delivered') {
+      console.log('sj')
       return res.status(400).json({ message: `Meal ${meal} is already marked as delivered` });
     }
 
@@ -1261,103 +1268,196 @@ const updateUserAttendance = async (req, res) => {
 /**
  * Update User Attendance Batch Vise
  */
-const updateUserAttendanceBatch = async (req, res) => {
-  try {
-    const { changes, date } = req.body; // changes is an array of { userId, meal, newStatus }
+// const updateUserAttendanceBatch = async (req, res) => {
+//   try {
+//     const { changes, date } = req.body; // changes is an array of { userId, meal, newStatus }
 
-    if (!Array.isArray(changes) || changes.length === 0) {
-      return res.status(400).json({ message: 'No changes provided.' });
-    }
+//     if (!Array.isArray(changes) || changes.length === 0) {
+//       return res.status(400).json({ message: 'No changes provided.' });
+//     }
 
-    for (const change of changes) {
-      const { userId, meal, newStatus } = change;
+//     for (const change of changes) {
+//       const { userId, meal, newStatus } = change;
 
-      // Validate input
-      const { error } = Attendance.validate({ date, meal, status: newStatus });
+//       // Validate input
+//       const { error } = Attendance.validate({ date, meal, status: newStatus });
 
-      if (error) {
-        return res.status(400).json({ message: error.details[0].message });
-      }
+//       if (error) {
+//         return res.status(400).json({ message: error.details[0].message });
+//       }
    
-      // Validate User ID
-      if (!mongoose.Types.ObjectId.isValid(userId)) {
-        return res.status(400).json({ message: `Invalid User ID: ${userId}` });
-      }
-  // Find the User
-  const user = await User.findById(userId);
-  if (!user) {
-    return res.status(404).json({ message: `User not found: ${userId}` });
-  }
+//       // Validate User ID
+//       if (!mongoose.Types.ObjectId.isValid(userId)) {
+//         return res.status(400).json({ message: `Invalid User ID: ${userId}` });
+//       }
+//   // Find the User
+//   const user = await User.findById(userId);
+//   if (!user) {
+//     return res.status(404).json({ message: `User not found: ${userId}` });
+//   }
 
-  const targetDate = stripTime(new Date(date));
+//   const targetDate = stripTime(new Date(date));
 
-  // Find the active order for the given date
-  const latestOrder = await Order.findOne({
-    userId: user._id,
-    status: { $in: ['active', 'leave'] },
-    orderStart: { $lte: targetDate },
-    orderEnd: { $gte: targetDate },
-  });
+//   // Find the active order for the given date
+//   const latestOrder = await Order.findOne({
+//     userId: user._id,
+//     status: { $in: ['active', 'leave'] },
+//     orderStart: { $lte: targetDate },
+//     orderEnd: { $gte: targetDate },
+//   });
 
-  if (!latestOrder) {
-    return res.status(404).json({ message: `No active order found for user: ${userId} on date: ${date}` });
-  }
+//   if (!latestOrder) {
+//     return res.status(404).json({ message: `No active order found for user: ${userId} on date: ${date}` });
+//   }
 
-      // Ensure the latest order is active on the given date
-      const orderStart = stripTime(new Date(latestOrder.orderStart));
-      const orderEnd = stripTime(new Date(latestOrder.orderEnd));
+//       // Ensure the latest order is active on the given date
+//       const orderStart = stripTime(new Date(latestOrder.orderStart));
+//       const orderEnd = stripTime(new Date(latestOrder.orderEnd));
   
 
-      if (targetDate < orderStart || targetDate > orderEnd) {
-        return res.status(400).json({ message: `Date is outside the order period for user: ${userId}` });
-      }
+//       if (targetDate < orderStart || targetDate > orderEnd) {
+//         return res.status(400).json({ message: `Date is outside the order period for user: ${userId}` });
+//       }
 
-      // Check if the date is a leave day
-      const isLeaveDay = latestOrder.leave.some((leave) => {
-        const leaveStart = stripTime(new Date(leave.start));
-        const leaveEnd = stripTime(new Date(leave.end));
-        return targetDate >= leaveStart && targetDate <= leaveEnd;
-      });
+//       // Check if the date is a leave day
+//       const isLeaveDay = latestOrder.leave.some((leave) => {
+//         const leaveStart = stripTime(new Date(leave.start));
+//         const leaveEnd = stripTime(new Date(leave.end));
+//         return targetDate >= leaveStart && targetDate <= leaveEnd;
+//       });
 
-      if (isLeaveDay) {
-        return res.status(400).json({ message: `Cannot mark attendance on leave days for user: ${userId}` });
-      }
+//       if (isLeaveDay) {
+//         return res.status(400).json({ message: `Cannot mark attendance on leave days for user: ${userId}` });
+//       }
 
-      // Initialize attendance if not present for the date
-      if (!latestOrder.attendances) {
-        latestOrder.attendances = [];
-      }
+//       // Initialize attendance if not present for the date
+//       if (!latestOrder.attendances) {
+//         latestOrder.attendances = [];
+//       }
 
-      // Find the attendance record for the selected date
-      let attendanceRecord = latestOrder.attendances.find(
-        (att) => stripTime(att.date).getTime() === targetDate.getTime()
-      );
+//       // Find the attendance record for the selected date
+//       let attendanceRecord = latestOrder.attendances.find(
+//         (att) => stripTime(att.date).getTime() === targetDate.getTime()
+//       );
 
-      if (!attendanceRecord) {
-        return res.status(400).json({ message: `Attendance record for the selected date does not exist for user: ${userId}. Please wait for the cron job to create it.` });
-      }
+//       if (!attendanceRecord) {
+//         return res.status(400).json({ message: `Attendance record for the selected date does not exist for user: ${userId}. Please wait for the cron job to create it.` });
+//       }
 
-      // Validate current status before updating
-      const currentStatus = attendanceRecord[meal];
-      if (newStatus === 'delivered' && currentStatus === 'delivered') {
-        return res.status(400).json({ message: `Meal ${meal} is already marked as delivered for user: ${userId}` });
-      }
+//       // Validate current status before updating
+//       const currentStatus = attendanceRecord[meal];
+//       if (newStatus === 'delivered' && currentStatus === 'delivered') {
+//         return res.status(400).json({ message: `Meal ${meal} is already marked as delivered for user: ${userId}` });
+//       }
 
-      // Update the specific meal status
-      attendanceRecord[meal] = newStatus;
+//       // Update the specific meal status
+//       attendanceRecord[meal] = newStatus;
 
-      // Save the updated order
-      await latestOrder.save();
+//       // Save the updated order
+//       await latestOrder.save();
+//     }
+
+//     res.status(200).json({
+//       message: 'All attendance updates were successful.',
+//     });
+//   } catch (error) {
+//     console.error('Error updating user attendance batch:', error);
+//     res.status(500).json({ message: 'Failed to update attendance batch.' });
+//   }
+// };
+
+// Update a single user's attendance
+const xy = async (req, res) => {
+  try {
+    console.log(req.body);
+    const { userId, meal, date, newStatus } = req.body;
+
+    // Validate input
+    const { error } = Attendance.validate({ date, meal, status: newStatus });
+
+    if (error) {
+      return res.status(400).json({ message: error.details[0].message });
     }
 
+    // Validate User ID
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: `Invalid User ID: ${userId}` });
+    }
+
+    // Find the User
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: `User not found: ${userId}` });
+    }
+
+    const targetDate = stripTime(new Date(date));
+
+    // Find the active order for the given date
+    const latestOrder = await Order.findOne({
+      userId: user._id,
+      status: { $in: ['active', 'leave'] },
+      orderStart: { $lte: targetDate },
+      orderEnd: { $gte: targetDate },
+    });
+
+    if (!latestOrder) {
+      return res.status(404).json({ message: `No active order found for user: ${userId} on date: ${date}` });
+    }
+
+    // Ensure the latest order is active on the given date
+    const orderStart = stripTime(new Date(latestOrder.orderStart));
+    const orderEnd = stripTime(new Date(latestOrder.orderEnd));
+
+    if (targetDate < orderStart || targetDate > orderEnd) {
+      return res.status(400).json({ message: `Date is outside the order period for user: ${userId}` });
+    }
+
+    // Check if the date is a leave day
+    const isLeaveDay = latestOrder.leave.some((leave) => {
+      const leaveStart = stripTime(new Date(leave.start));
+      const leaveEnd = stripTime(new Date(leave.end));
+      return targetDate >= leaveStart && targetDate <= leaveEnd;
+    });
+
+    if (isLeaveDay) {
+      return res.status(400).json({ message: `Cannot mark attendance on leave days for user: ${userId}` });
+    }
+
+    // Initialize attendance if not present for the date
+    if (!latestOrder.attendances) {
+      latestOrder.attendances = [];
+    }
+
+    // Find the attendance record for the selected date
+    let attendanceRecord = latestOrder.attendances.find(
+      (att) => stripTime(att.date).getTime() === targetDate.getTime()
+    );
+
+    if (!attendanceRecord) {
+      return res.status(400).json({ message: `Attendance record for the selected date does not exist for user: ${userId}. Please wait for the cron job to create it.` });
+    }
+
+    // Validate current status before updating
+    const currentStatus = attendanceRecord[meal];
+    if (newStatus === 'delivered' && currentStatus === 'delivered') {
+      return res.status(400).json({ message: `Meal ${meal} is already marked as delivered for user: ${userId}` });
+    }
+
+    // Update the specific meal status
+    attendanceRecord[meal] = newStatus;
+
+    // Save the updated order
+    await latestOrder.save();
+
     res.status(200).json({
-      message: 'All attendance updates were successful.',
+      message: 'Attendance updated successfully.',
     });
   } catch (error) {
-    console.error('Error updating user attendance batch:', error);
-    res.status(500).json({ message: 'Failed to update attendance batch.' });
+    console.error('Error updating user attendance:', error);
+    res.status(500).json({ message: 'Failed to update attendance.' });
   }
 };
+
 
 /**
  * Location Update
@@ -2549,14 +2649,15 @@ module.exports = {
   getPointsWithExpiredUsers,
   getPointsWithStatistics,
   getUsersByPointId,
-  updateUserAttendance,
+  // updateUserAttendance,
   renewOrder,
   softDeleteUser,
   getSoftDeletedUsers,
   restoreDeletedUsers,
   hardDeleteUser,
-  updateUserAttendanceBatch,
+  // updateUserAttendanceBatch,
   getNewOrders,
-  markOrderAsBilled
+  markOrderAsBilled,
+  updateUserAttendanceApp
 };
 // ------------------------------------------------------------------------------------------------------------------------------end
