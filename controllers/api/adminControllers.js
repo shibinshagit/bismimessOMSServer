@@ -2610,8 +2610,8 @@ async function removePendingPaymentStatus() {
     console.error('Error updating payment statuses:', error);
   }
 }
-const accountSid = 'ACecda62c279b9576ad7957cf209bfe32e'; // Replace with your Twilio Account SID
-const authToken = '04367bc0126ce7b75a72927e24727d17';    // Replace with your Twilio Auth Token
+const accountSid = process.env.TWILIO_ACCOUNT_SID; // Replace with your Twilio Account SID
+const authToken = process.env.TWILIO_TOKEN;    // Replace with your Twilio Auth Token
 const client = twilio(accountSid, authToken);
 
 async function sentInvoiceBackendAuto() {
