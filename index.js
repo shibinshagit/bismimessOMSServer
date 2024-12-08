@@ -50,7 +50,7 @@ const host = process.env.HOST || "localhost";
 const server = createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: "https://admin.bismimess.online",
   },
 });
 setSocketIOInstance(io);
