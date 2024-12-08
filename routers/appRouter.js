@@ -22,7 +22,6 @@ router.post("/otpcheck", appController.otpCheck);
 router.get('/user',authenticate, appController.getUserById);
 router.get("/orders", authenticate, appController.getUserOrders);
 router.put("/updateProfile",authenticate, appController.updateProfile);
-
 // routes/appRoutes.js
 router.post('/orders/:orderId/leaves', authenticate, appController.addLeave);
 router.delete('/orders/:orderId/leaves/:leaveId', authenticate, appController.deleteLeave);

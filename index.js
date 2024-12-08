@@ -46,9 +46,9 @@ const host = process.env.HOST || "localhost";
 // Routes
 app.use("/api", ApiRoutes);
 app.use("/app", AppRoutes);
-app.use("/services", ServiceRoutes);
+app.use("/services", ServiceRoutes); 
 
-app.use("*", (req, res) => {
+app.use("*", (req, res) => {   
   res.status(404).json({ message: "request not found" });
 });
 

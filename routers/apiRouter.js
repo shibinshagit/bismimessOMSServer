@@ -8,6 +8,7 @@ const deliveryBoyController = require('../controllers/api/DeliveryControllers');
 const financeController = require('../controllers/api/financeControllers');
 const CreationController = require('../controllers/api/CreationController')
 const searchController = require('../controllers/api/searchController')
+const notificationController = require('../controllers/api/notifyControllers.js')
 const appController = require('../controllers/app/userControllers');
 const orderController = require('../controllers/api/orderController');
 // ------------------------------------------------------------------------------------------------------------------------------end
@@ -59,10 +60,26 @@ router.post('/points', pointsController.addNewPoint);
 // ------------------------------------------------------------------------------------------------------------------------------end
 
 // Delivery Boys Routes---------------------------------------------------------------------------------------------------------
-router.get('/delivery-boys', deliveryBoyController.getAllDeliveryBoys);
-router.post('/delivery-boys', deliveryBoyController.addNewDeliveryBoy);
-router.put('/delivery-boys/:id', deliveryBoyController.editDeliveryBoy);
-router.delete('/delivery-boys/:id', deliveryBoyController.deleteDeliveryBoy);
+router.get('/replace/delivery-boys', deliveryBoyController.getAllDeliveryBoys);
+router.post('/replace/delivery-boys', deliveryBoyController.addNewDeliveryBoy);
+router.put('/replace/delivery-boys/:id', deliveryBoyController.editDeliveryBoy);
+router.delete('/replace/delivery-boys/:id', deliveryBoyController.deleteDeliveryBoy);
+
+// Authentication Routes
+router.post('/replace/login', deliveryBoyController.loginDeliveryBoy);
+router.get('/replace/profile', deliveryBoyController.getUserProfile);
+
+// Delivery Boy Management Routes
+router.get('/replace', deliveryBoyController.getAllDeliveryBoys);
+router.post('/replace', deliveryBoyController.addNewDeliveryBoy);
+router.put('/replace/:id', deliveryBoyController.editDeliveryBoy);
+router.delete('/replace/:id', deliveryBoyController.deleteDeliveryBoy);
+
+// Delivery Points and Orders
+router.get('/replace/:id/points', deliveryBoyController.getDeliverypoints);
+router.get('/replace/:id/orders', deliveryBoyController.getOrders);
+router.get('/replace', deliveryBoyController.getUsersByPoint);
+
 // ------------------------------------------------------------------------------------------------------------------------------end
 
 // Order Routes------------------------------------------------------------------------------------------------------------------
@@ -100,8 +117,20 @@ router.get('/search', searchController.searchUsers);
 router.get('/suggestions', searchController.getUserSuggestions);
 router.get('/paymentStatus/pending', searchController.getUsersWithPendingPayment);
 // ------------------------------------------------------------------------------------------------------------------------------end
-// Search Routes
+// Notes Routes
+router.get('/notes', notificationController.getAllNotes);
 
+// GET note by ID
+router.get('/notes/:id', notificationController.getNoteById);
+
+// POST add new note
+router.post('/notes', notificationController.createNote);
+
+// PUT update note
+router.put('/notes/:id', notificationController.updateNote);
+
+// DELETE note
+router.delete('/notes/:id', notificationController.deleteNote);
 // ------------------------------------------------------------------------------------------------------------------------------end
 
 module.exports = router;
