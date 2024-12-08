@@ -50,9 +50,11 @@ const host = process.env.HOST || "localhost";
 const server = createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "https://admin.bismimess.online",
-  },
+    origin: "https://admin.bismimess.online",  // Make sure this is your frontend URL
+    methods: ["GET", "POST"]
+}
 });
+
 setSocketIOInstance(io);
 // Example: Handle socket.io connections
 io.on("connection", (socket) => {
