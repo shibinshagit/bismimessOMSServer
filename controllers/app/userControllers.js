@@ -28,7 +28,7 @@ const sendOtp = async (phone) => {
     function generateOTP() {
       return Math.floor(1000 + Math.random() * 9000).toString();
     }
-
+          
     const otpCode = generateOTP();
 
     await client.messages.create({

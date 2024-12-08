@@ -7,6 +7,7 @@ const cloudinary = require('../../config/cloudinary');
 const upload = require('../../middlewares/multer');
 const Admin = require("../../Models/adminSchema");
 const User = require("../../Models/UserSchema");
+const userTemp = require("../../Models/AppUserModel");
 const Point = require("../../Models/PointSchema");
 const Order = require("../../Models/OrderSchema");
 const Attendance = require("../../Models/attendanceSchema");
@@ -1176,22 +1177,20 @@ const deleteLeave = async (req, res) => {
 /**
  * Update User Attendance
  */
-const updateUserAttendanceApp = async (req, res) => {
+const updateUserAttendance = async (req, res) => {
   try {
-    const { d } = req.params;
-    const { userId, date, meal } = req.body;
+    const { userId } = req.params;
+    const { date, meal } = req.body;
     console.log(userId, req.body);
 
     // Validate input
     const { error } = Attendance.validate(req.body);
 
     if (error) {
-      console.log(error);
       return res.status(400).json({ message: error.details[0].message });
     }
     // Validate User ID
     if (!mongoose.Types.ObjectId.isValid(userId)) {
-      console.log('tything')
       return res.status(400).json({ message: 'Invalid User ID' });
     }
 
@@ -1224,7 +1223,6 @@ const updateUserAttendanceApp = async (req, res) => {
     });
 
     if (isLeaveDay) {
-      console.log('jhdsjfh')
       return res.status(400).json({ message: 'Cannot mark attendance on leave days' });
     }
 
@@ -1239,14 +1237,12 @@ const updateUserAttendanceApp = async (req, res) => {
     );
 
     if (!attendanceRecord) {
-      console.log('jdjf')
       return res.status(400).json({ message: 'Attendance record for the selected date does not exist. Please wait for the cron job to create it.' });
     }
 
     // Validate current status before updating
     const currentStatus = attendanceRecord[meal];
     if (currentStatus === 'delivered') {
-      console.log('sj')
       return res.status(400).json({ message: `Meal ${meal} is already marked as delivered` });
     }
 
@@ -1367,17 +1363,10 @@ const updateUserAttendanceApp = async (req, res) => {
 // };
 
 // Update a single user's attendance
-const xy = async (req, res) => {
+const updateUserAttendanceApp = async (req, res) => {
   try {
-    console.log(req.body);
     const { userId, meal, date, newStatus } = req.body;
-
-    // Validate input
-    const { error } = Attendance.validate({ date, meal, status: newStatus });
-
-    if (error) {
-      return res.status(400).json({ message: error.details[0].message });
-    }
+    console.log(req.body);
 
     // Validate User ID
     if (!mongoose.Types.ObjectId.isValid(userId)) {
@@ -1391,6 +1380,7 @@ const xy = async (req, res) => {
     }
 
     const targetDate = stripTime(new Date(date));
+    console.log(targetDate);
 
     // Find the active order for the given date
     const latestOrder = await Order.findOne({
@@ -1439,12 +1429,15 @@ const xy = async (req, res) => {
 
     // Validate current status before updating
     const currentStatus = attendanceRecord[meal];
-    if (newStatus === 'delivered' && currentStatus === 'delivered') {
-      return res.status(400).json({ message: `Meal ${meal} is already marked as delivered for user: ${userId}` });
-    }
+
+    // You can adjust validation logic as needed
+    // For example, prevent changing from 'delivered' back to 'packed' only if necessary
 
     // Update the specific meal status
     attendanceRecord[meal] = newStatus;
+
+    // Mark the 'attendances' field as modified
+    latestOrder.markModified('attendances');
 
     // Save the updated order
     await latestOrder.save();
@@ -1457,6 +1450,7 @@ const xy = async (req, res) => {
     res.status(500).json({ message: 'Failed to update attendance.' });
   }
 };
+
 
 
 /**
@@ -2649,7 +2643,7 @@ module.exports = {
   getPointsWithExpiredUsers,
   getPointsWithStatistics,
   getUsersByPointId,
-  // updateUserAttendance,
+  updateUserAttendance,
   renewOrder,
   softDeleteUser,
   getSoftDeletedUsers,
