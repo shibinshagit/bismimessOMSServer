@@ -50,17 +50,19 @@ const host = process.env.HOST || "localhost";
 const server = createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "https://admin.bismimess.online",
+    origin: "*",
   },
 });
 setSocketIOInstance(io);
 // Example: Handle socket.io connections
 io.on("connection", (socket) => {
-  console.log("New WebSocket connection:", socket.id);
-  socket.on("error", (err) => console.error("Socket error:", err));
-  socket.on("disconnect", (reason) => console.log("Socket disconnected:", reason));
-});
+  console.log("A user connected:", socket.id);
 
+  // Handle disconnection
+  socket.on("disconnect", () => {
+    console.log("A user disconnected:", socket.id);
+  });
+});
 
 // Routes
 app.use("/api", ApiRoutes);       
