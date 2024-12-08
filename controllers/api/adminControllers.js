@@ -276,7 +276,7 @@ const postUser = async (req, res) => {
     res.status(500).json({ message: "Error adding user" });
   }
 };
-console.log('env:',process.env.GOOGLE_CLIENT_ID);
+// console.log('env:',process.env.GOOGLE_CLIENT_ID);
 const createGoogleContact = async (name, phone, pointName) => {
   // Set up OAuth2 client with your credentials
   const oAuth2Client = new google.auth.OAuth2(
