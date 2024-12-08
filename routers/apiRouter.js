@@ -11,10 +11,10 @@ const searchController = require('../controllers/api/searchController')
 const notificationController = require('../controllers/api/notifyControllers.js')
 const appController = require('../controllers/app/userControllers');
 const orderController = require('../controllers/api/orderController');
+const Note = require('../Models/noteModel.js');
 // ------------------------------------------------------------------------------------------------------------------------------end
 
 require('dotenv').config();
-
 router.use(express.json(), express.urlencoded({ extended: true }))
       .use((req, res, next) => { res.locals.session = req.session; next(); });
       router.get('/:userId/orders', orderController.getUserOrders);
@@ -131,6 +131,9 @@ router.put('/notes/:id', notificationController.updateNote);
 
 // DELETE note
 router.delete('/notes/:id', notificationController.deleteNote);
+
+router.get('/countNotify', notificationController.getUnreadCount);
 // ------------------------------------------------------------------------------------------------------------------------------end
 
 module.exports = router;
+   

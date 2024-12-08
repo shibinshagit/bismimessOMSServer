@@ -1,4 +1,11 @@
 const Note = require('../../Models/noteModel');
+const { Server } = require("socket.io");
+let io;
+
+// Function to set the io instance
+const setSocketIOInstance = (ioInstance) => {
+  io = ioInstance;
+};
 
 // GET all notes
 const getAllNotes = async (req, res) => {
@@ -28,17 +35,29 @@ const getNoteById = async (req, res) => {
 const createNote = async (req, res) => {
   try {
     const { toWhom, matter, date, markAsRead } = req.body;
+
+    // Validate required fields
     if (!toWhom || !matter || !date) {
-      return res.status(400).json({ message: 'Required fields missing' });
+      return res.status(400).json({ message: "Required fields missing" });
     }
+
+    // Save the new note
     const newNote = new Note({ toWhom, matter, date, markAsRead });
     const savedNote = await newNote.save();
+
+    // Emit a notification to all connected clients
+    if (io) {
+      io.emit("newNote", savedNote);
+    }
+
     res.status(201).json(savedNote);
   } catch (error) {
-    console.error('Error creating note:', error);
-    res.status(500).json({ message: 'Server error' });
+    console.error("Error creating note:", error);
+    res.status(500).json({ message: "Server error" });
   }
 };
+
+
 
 // PUT update note
 const updateNote = async (req, res) => {
@@ -70,11 +89,27 @@ const deleteNote = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+// getUnreadCount
+// const Note = require('../../Models/noteModel');
+const getUnreadCount = async (req, res) => {
+  try {
+    // Count notes where `read` is false
+    const unreadCount = await Note.countDocuments({ markAsRead: false });
+    console.log('count:',unreadCount)
+    res.status(200).json({ count: unreadCount });
+  } catch (error) {
+    console.error("Error fetching unread notifications count:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+
 
 module.exports = {
-    getAllNotes,
+    getAllNotes,    
     getNoteById,
     createNote,
     updateNote,
     deleteNote,
+    getUnreadCount,
+    setSocketIOInstance 
 };
