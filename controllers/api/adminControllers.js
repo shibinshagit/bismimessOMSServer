@@ -13,11 +13,7 @@ const Order = require("../../Models/OrderSchema");
 const Attendance = require("../../Models/attendanceSchema");
 const fs = require('fs');
 const dotenv = require("dotenv");
-const twilio = require('twilio');
-dotenv.config();
-const accountSid = process.env.TWILIO_ACCOUNT_SID; // Replace with your Twilio Account SID
-const authToken = process.env.TWILIO_TOKEN;    // Replace with your Twilio Auth Token
-const client = twilio(accountSid, authToken);   
+dotenv.config();   
 // ------------------------------------------------------------------------------------------------------------------------------end
 
 // Helper Functions----------------------------------------------------------------------------------------------------------------
