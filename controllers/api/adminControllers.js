@@ -2670,7 +2670,7 @@ async function sentInvoiceBackendAuto() {
 
     const sendMessage = async (user, message) => {
       try {
-        const whatsappNumber = `whatsapp:+919207649438`;
+        const whatsappNumber = process.env.WHATSAPP_NUM;
         await client.messages.create({
           from: process.env.WHATSAPP_NUM,
           to: whatsappNumber,
