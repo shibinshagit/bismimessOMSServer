@@ -6,10 +6,26 @@ const Point = require('../../Models/PointSchema');
 const Bulk = require('../../Models/BulkModel');
 const User = require('../../Models/UserSchema');
 
+// const stripTime = (date) => {
+//     const utcDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+//     return utcDate;
+//   };
+
+
 const stripTime = (date) => {
-    const utcDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-    return utcDate;
-  };
+  // Use `Intl.DateTimeFormat` to handle Indian Standard Time conversion
+  const istDate = new Date(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+    }).format(date)
+  );
+  return istDate;
+};
+
+
 // ... existing imports
 
 /**

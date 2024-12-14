@@ -22,10 +22,26 @@ const client = twilio(accountSid, authToken);
 
 // Helper Functions----------------------------------------------------------------------------------------------------------------
 
+// const stripTime = (date) => {
+//   const utcDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+//   return utcDate;
+// };
+
 const stripTime = (date) => {
-  const utcDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  return utcDate;
+  // Use `Intl.DateTimeFormat` to handle Indian Standard Time conversion
+  const istDate = new Date(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+    }).format(date)
+  );
+  return istDate;
 };
+
+
+
 /**
  * Helper function to determine if two date ranges overlap
  */
@@ -2654,11 +2670,11 @@ async function sentInvoiceBackendAuto() {
 
     const sendMessage = async (user, message) => {
       try {
-        const whatsappNumber = `whatsapp:+919995442239`;
+        const whatsappNumber = `whatsapp:+919207649438`;
         await client.messages.create({
           from: process.env.WHATSAPP_NUM,
           to: whatsappNumber,
-          body: message,
+          body: message, 
         });
         console.log(`Invoice sent to ${user.phone}`);
         return true;
