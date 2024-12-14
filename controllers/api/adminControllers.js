@@ -2631,122 +2631,6 @@ async function removePendingPaymentStatus() {
 }
   
 
-async function sentInvoiceBackendAuto() {
-  try {
-    const today = new Date();
-    const threeDaysLater = new Date();
-    threeDaysLater.setDate(today.getDate() + 3);
-
-    const calculateInvoice = (leave, plan) => {
-      const totalLeave = leave.reduce((acc, leave) => {
-        const startDate = new Date(leave.start);
-        const endDate = new Date(leave.end);
-        const numberOfLeaves =
-          Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
-        return acc + numberOfLeaves;
-      }, 0);
-
-      const planLength = plan?.length || 0;
-      let bill = 0, reduce = 0;
-
-      switch (planLength) {
-        case 3:
-          bill = 3200;
-          reduce = 100;
-          break;
-        case 2:
-          bill = 2750;
-          reduce = 70;
-          break;
-        default:
-          bill = 1500;
-          reduce = 0;
-      }
-
-      const invoiceAmount = bill - totalLeave * reduce;
-
-      return { totalLeave, invoiceAmount, bill, reduce };
-    };
-
-    const sendMessage = async (user, message) => {
-      try {
-        const whatsappNumber = process.env.WHATSAPP_NUM;
-        await client.messages.create({
-          from: process.env.WHATSAPP_NUM,
-          to: whatsappNumber,
-          body: message, 
-        });
-        console.log(`Invoice sent to ${user.phone}`);
-        return true;
-      } catch (error) {
-        console.error(`Failed to send invoice to ${user.phone}:`, error.message);
-        return false;
-      }
-    };
-
-    const processOrders = async (query) => {
-      // Update query to exclude deleted users
-      const orders = await Order.find(query).populate({
-        path: 'userId',
-        match: { isDeleted: false }, // Exclude deleted users from population
-      });
-
-      for (const order of orders) {
-        // Ensure the user data is valid (userId exists and is not deleted)
-        if (order.userId) {
-          const { userId, orderEnd, plan, leave = [] } = order;
-          const user = userId;
-          const { totalLeave, invoiceAmount, bill, reduce } = calculateInvoice(leave, plan);
-
-          const formattedEndDate = new Date(orderEnd)
-            .toLocaleDateString("en-GB")
-            .replace(/\//g, "-");
-
-          const message = `
-${user.name}, your food bill till ${formattedEndDate} is as follows:
-
-Total leaves: ${totalLeave}
-Total amount: ₹${bill}
-Leave deduction: ₹${reduce} x ${totalLeave} = ₹${totalLeave * reduce}
-------------------------------------
-Amount to pay: ₹${invoiceAmount} 👍
-
-Bismi Mess Payment Method:
-
-Pay to - 9847952414 (Shebeer km)
-(GPay, PhonePe, Paytm, other UPI)
-
-(Send the screenshot after payment)
-`;
-
-          const messageSent = await sendMessage(user, message);
-
-          if (messageSent) {
-            // Log that invoice sent successfully
-            console.log(`Invoice sent to ${user.name}`);
-            // Optional: Update the order status here if needed
-            // order.isBilled = true;
-            // await order.save();
-          }
-        }
-      }
-    };
-
-    // Query adjusted to exclude inactive users
-    await processOrders({
-      isBilled: false,
-      orderStart: { $lte: today },
-      orderEnd: { $gte: today, $lte: threeDaysLater },
-    });
-
-    console.log("Automatic invoice sending completed.");
-  } catch (error) {
-    console.error("Error in sentInvoiceBackendAuto:", error.message);
-  }
-}
-
-
-
 
 
 
@@ -2771,10 +2655,6 @@ cron.schedule('0 6 * * *', () => {
   timezone: 'Asia/Kolkata',
 });
 
-// cron.schedule('* * * * *', () => {
-//   console.log('Running task every second');
-// sentInvoiceBackendAuto();
-// });
 
 // ------------------------------------------------------------------------------------------------------------------------------end
 
