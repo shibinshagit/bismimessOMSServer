@@ -50,17 +50,9 @@ const host = process.env.HOST || "localhost";
 const server = createServer(app);
 const io = new Server(server, {
   cors: {
-<<<<<<< HEAD
-    origin: "https://admin.bismimess.online",  // Make sure this is your frontend URL
-    methods: ["GET", "POST"]
-}
-});
-
-=======
     origin: "https://admin.bismimess.online",
   },
 });
->>>>>>> 6cf5aec15a5efb45e0a1e1fcee72cefc87c9526d
 setSocketIOInstance(io);
 // Example: Handle socket.io connections
 io.on("connection", (socket) => {
@@ -72,7 +64,7 @@ io.on("connection", (socket) => {
   });
 });
 
-// Routes
+// Routes------------------------
 app.use("/api", ApiRoutes);       
 app.use("/app", AppRoutes);
 app.use("/services", ServiceRoutes);
