@@ -46,23 +46,23 @@ connectDB();
 const port = process.env.PORT || 5000;
 const host = process.env.HOST || "localhost";
 
-// Create HTTP server and attach socket.io
+// // Create HTTP server and attach socket.io
 const server = createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: "https://admin.bismimess.online",
-  },
-});
-setSocketIOInstance(io);
+// const io = new Server(server, {
+//   cors: {
+//     origin: "https://admin.bismimess.online",
+//   },
+// });
+// setSocketIOInstance(io);
 // Example: Handle socket.io connections
-io.on("connection", (socket) => {
-  console.log("A user connected:", socket.id);
+// io.on("connection", (socket) => {
+//   console.log("A user connected:", socket.id);
 
-  // Handle disconnection
-  socket.on("disconnect", () => {
-    console.log("A user disconnected:", socket.id);
-  });
-});
+//   // Handle disconnection
+//   socket.on("disconnect", () => {
+//     console.log("A user disconnected:", socket.id);
+//   });
+// });
 
 // Routes------------------------
 app.use("/api", ApiRoutes);       
@@ -75,3 +75,4 @@ app.use("*", (req, res) => {
 
 // Start server
 server.listen(port, () => console.log(`Server is running on ${host}:${port}`));
+  
